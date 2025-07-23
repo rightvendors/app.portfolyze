@@ -6,7 +6,9 @@ import {
   ConfirmationResult,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  updateProfile
+  updateProfile,
+  setPersistence,
+  browserLocalPersistence
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
 
@@ -26,6 +28,8 @@ export const useFirebaseAuth = () => {
   const [isOtpSent, setIsOtpSent] = useState(false);
 
   useEffect(() => {
+    setPersistence(auth, browserLocalPersistence)
+    .then(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser: User | null) => {
       if (firebaseUser) {
         setUser({
@@ -41,6 +45,11 @@ export const useFirebaseAuth = () => {
     });
 
     return () => unsubscribe();
+  })
+  .catch((error) => {
+      console.error("Error setting auth persistence:", error);
+      setLoading(false);
+    });
   }, []);
 
   // Initialize reCAPTCHA verifier
