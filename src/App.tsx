@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useFirebaseAuth } from './hooks/useFirebaseAuth';
 import { useFirestorePortfolio } from './hooks/useFirestorePortfolio';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -11,7 +10,6 @@ import CurrentHoldingsTable from './components/CurrentHoldingsTable';
 import InvestmentBucketsTable from './components/InvestmentBucketsTable';
 import FilterBar from './components/FilterBar';
 import { FileText, TrendingUp, Target } from 'lucide-react';
-import SignInPage from './pages/SignInPage';
 
 function Dashboard() {
   const { user } = useFirebaseAuth();
@@ -155,15 +153,4 @@ function Dashboard() {
   );
 }
 
-function AppWrapper() {
-  return (
-    <Router>
-      <Routes>
-        <Route path="/signin" element={<SignInPage />} />
-                  <Route path="/*" element={<Dashboard />} />
-      </Routes>
-    </Router>
-  );
-}
-
-export default AppWrapper;
+export default Dashboard;
