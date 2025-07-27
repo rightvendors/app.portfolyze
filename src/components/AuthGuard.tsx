@@ -13,7 +13,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children, fallback }) => {
 
   // TEMPORARY: Bypass authentication for development
   // Remove this block when authentication is needed again
-  return <>{children}</>;
+  // return <>{children}</>;
 
   if (loading) {
     return (
