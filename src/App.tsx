@@ -23,6 +23,7 @@ function Dashboard() {
     filters,
     loading,
     loadingStates,
+    hasLoadedInitialData,
     error,
     isLoadingPrices,
     setFilters,
@@ -124,16 +125,23 @@ function Dashboard() {
           )}
 
           {/* Main Content */}
-          {loading ? (
+          {loading && !hasLoadedInitialData ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">Loading {activeTab}...</p>
+                <p className="text-gray-600">Setting up your portfolio...</p>
               </div>
             </div>
           ) : (
             <main className="max-w-7xl mx-auto">
-              {activeTab === 'trades' ? (
+              {loadingStates[activeTab] ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600 mx-auto mb-3"></div>
+                    <p className="text-gray-600 text-sm">Loading {activeTab}...</p>
+                  </div>
+                </div>
+              ) : activeTab === 'trades' ? (
                 <ErrorBoundary>
                   <TradesTable
                     trades={filteredTrades}

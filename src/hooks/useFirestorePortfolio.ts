@@ -31,6 +31,11 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     buckets?: () => void;
   }>({});
   
+  // Calculated data states - only calculate when needed
+  const [calculatedHoldings, setCalculatedHoldings] = useState<Holding[]>([]);
+  const [calculatedBuckets, setCalculatedBuckets] = useState<BucketSummary[]>([]);
+  const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
+  
   const [filters, setFilters] = useState<FilterState>({
     investmentType: '',
     buckets: '',
@@ -42,6 +47,12 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
 
   const [priceCache, setPriceCache] = useState<{ [key: string]: { price: number; timestamp: number } }>({});
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+  // Fast initial load - show interface immediately
+  const fastInitialLoad = useCallback(() => {
+    setLoading(false); // Show interface immediately
+    setHasLoadedInitialData(true);
+  }, []);
 
   // Fetch real-time price with caching
   const fetchRealTimePrice = useCallback(async (symbol: string, type: string): Promise<number> => {
@@ -95,45 +106,60 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     const unsubscribe = firestoreService.subscribeToUserTrades(userId, (userTrades) => {
       setTrades(userTrades);
       setLoadingStates(prev => ({ ...prev, trades: false }));
-      if (initialTab === 'trades') {
-        setLoading(false);
-      }
     });
     
     setSubscriptions(prev => ({ ...prev, trades: unsubscribe }));
-  }, [subscriptions.trades, initialTab]);
+  }, [subscriptions.trades]);
 
   const loadHoldings = useCallback((userId: string) => {
     if (subscriptions.holdings) return; // Already subscribed
     
     setLoadingStates(prev => ({ ...prev, holdings: true }));
     
+    // Use a background calculation to avoid blocking UI
+    setTimeout(() => {
+      const calculatedHoldingsData = calculateCurrentHoldings();
+      setCalculatedHoldings(calculatedHoldingsData);
+    }, 100);
+    
     const unsubscribe = firestoreService.subscribeToUserHoldings(userId, (userHoldings) => {
       setHoldings(userHoldings);
+      // Recalculate with fresh data in background
+      setTimeout(() => {
+        const updatedHoldings = calculateCurrentHoldings();
+        setCalculatedHoldings(updatedHoldings);
+      }, 100);
       setLoadingStates(prev => ({ ...prev, holdings: false }));
-      if (initialTab === 'holdings') {
-        setLoading(false);
-      }
     });
     
     setSubscriptions(prev => ({ ...prev, holdings: unsubscribe }));
-  }, [subscriptions.holdings, initialTab]);
+    setLoadingStates(prev => ({ ...prev, holdings: false }));
+  }, [subscriptions.holdings, trades, priceCache]);
 
   const loadBuckets = useCallback((userId: string) => {
     if (subscriptions.buckets) return; // Already subscribed
     
     setLoadingStates(prev => ({ ...prev, buckets: true }));
     
+    // Use a background calculation to avoid blocking UI
+    setTimeout(() => {
+      const calculatedBucketsData = calculateBucketSummary();
+      setCalculatedBuckets(calculatedBucketsData);
+    }, 100);
+    
     const unsubscribe = firestoreService.subscribeToUserBuckets(userId, (userBuckets) => {
       setBuckets(userBuckets);
+      // Recalculate with fresh data in background
+      setTimeout(() => {
+        const updatedBuckets = calculateBucketSummary();
+        setCalculatedBuckets(updatedBuckets);
+      }, 100);
       setLoadingStates(prev => ({ ...prev, buckets: false }));
-      if (initialTab === 'buckets') {
-        setLoading(false);
-      }
     });
     
     setSubscriptions(prev => ({ ...prev, buckets: unsubscribe }));
-  }, [subscriptions.buckets, initialTab]);
+    setLoadingStates(prev => ({ ...prev, buckets: false }));
+  }, [subscriptions.buckets, trades, buckets, priceCache]);
 
   // Load user data when user changes
   useEffect(() => {
@@ -145,42 +171,51 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       setTrades([]);
       setHoldings([]);
       setBuckets([]);
+      setCalculatedHoldings([]);
+      setCalculatedBuckets([]);
       setLoading(false);
       setLoadingStates({ trades: false, holdings: false, buckets: false });
+      setHasLoadedInitialData(false);
       return;
     }
 
-    setLoading(true);
     setError(null);
 
     if (enableLazyLoading) {
-      // Only load initial tab data immediately
+      // Show interface immediately, then load data progressively
+      fastInitialLoad();
+      
+      // Load initial tab data after interface is shown
       setTimeout(() => {
         switch (initialTab) {
           case 'trades':
             loadTrades(user.uid);
             break;
           case 'holdings':
-            loadHoldings(user.uid);
+            loadTrades(user.uid); // Need trades for calculations
+            setTimeout(() => loadHoldings(user.uid), 300);
             break;
           case 'buckets':
-            loadBuckets(user.uid);
+            loadTrades(user.uid); // Need trades for calculations
+            setTimeout(() => loadBuckets(user.uid), 300);
             break;
         }
-      }, 100); // Small delay to prevent immediate heavy load
+      }, 150); // Load data after UI is shown
     } else {
-      // Original behavior - load all data immediately
+      // Original behavior - load all data
+      setLoading(true);
       setTimeout(() => {
         loadTrades(user.uid);
         loadHoldings(user.uid);
         loadBuckets(user.uid);
+        setLoading(false);
       }, 100);
     }
 
     return () => {
       Object.values(subscriptions).forEach(unsubscribe => unsubscribe && unsubscribe());
     };
-  }, [user, enableLazyLoading, initialTab, loadTrades, loadHoldings, loadBuckets]);
+  }, [user, enableLazyLoading, initialTab, loadTrades, loadHoldings, loadBuckets, fastInitialLoad]);
 
   // Apply filters to trades
   useEffect(() => {
@@ -577,12 +612,13 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     // Data
     trades,
     filteredTrades,
-    holdings: calculateCurrentHoldings(),
-    buckets: calculateBucketSummary(),
+    holdings: calculatedHoldings,
+    buckets: calculatedBuckets,
     
     // State
     loading,
     loadingStates, // Added loadingStates to the return object
+    hasLoadedInitialData,
     error,
     isLoadingPrices,
     filters,
