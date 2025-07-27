@@ -103,12 +103,37 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     
     setLoadingStates(prev => ({ ...prev, trades: true }));
     
-    const unsubscribe = firestoreService.subscribeToUserTrades(userId, (userTrades) => {
-      setTrades(userTrades);
+    // Add timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      console.warn('Trades loading timeout - clearing loading state');
       setLoadingStates(prev => ({ ...prev, trades: false }));
-    });
+    }, 10000); // 10 seconds timeout
     
-    setSubscriptions(prev => ({ ...prev, trades: unsubscribe }));
+    try {
+      // First try to get data immediately, then set up subscription
+      firestoreService.getUserTrades(userId).then((initialTrades) => {
+        setTrades(initialTrades);
+        setLoadingStates(prev => ({ ...prev, trades: false }));
+        clearTimeout(timeoutId);
+        
+        // Then set up real-time subscription
+        const unsubscribe = firestoreService.subscribeToUserTrades(userId, (userTrades) => {
+          setTrades(userTrades);
+        });
+        
+        setSubscriptions(prev => ({ ...prev, trades: unsubscribe }));
+      }).catch((error) => {
+        clearTimeout(timeoutId);
+        console.error('Error loading trades:', error);
+        setError('Failed to load trades data');
+        setLoadingStates(prev => ({ ...prev, trades: false }));
+      });
+    } catch (error) {
+      clearTimeout(timeoutId);
+      console.error('Error setting up trades loading:', error);
+      setError('Failed to load trades data');
+      setLoadingStates(prev => ({ ...prev, trades: false }));
+    }
   }, [subscriptions.trades]);
 
   const loadHoldings = useCallback((userId: string) => {
@@ -257,6 +282,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   const loadTabData = useCallback((tab: 'trades' | 'holdings' | 'buckets') => {
     if (!user) return;
     
+    console.log(`Loading tab data for: ${tab}`);
+    
     switch (tab) {
       case 'trades':
         loadTrades(user.uid);
@@ -269,6 +296,28 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         break;
     }
   }, [user, loadTrades, loadHoldings, loadBuckets]);
+
+  // Force reload function for troubleshooting
+  const forceReloadTrades = useCallback(() => {
+    if (!user) return;
+    
+    console.log('Force reloading trades...');
+    
+    // Clear existing subscription
+    if (subscriptions.trades) {
+      subscriptions.trades();
+      setSubscriptions(prev => ({ ...prev, trades: undefined }));
+    }
+    
+    // Clear loading state and data
+    setLoadingStates(prev => ({ ...prev, trades: false }));
+    setTrades([]);
+    
+    // Reload after a brief delay
+    setTimeout(() => {
+      loadTrades(user.uid);
+    }, 100);
+  }, [user, subscriptions.trades, loadTrades]);
 
   // CRUD Operations
   const addTrade = async (trade: Omit<Trade, 'id' | 'buyAmount'>) => {
@@ -632,6 +681,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     updateBucketPurpose,
     updateAllPrices,
     loadTabData, // Added loadTabData to the return object
+    forceReloadTrades, // Added for troubleshooting
     
     // Utils
     clearError: () => setError(null)
