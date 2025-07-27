@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuth } from '../hooks/useAuth';
+import { useFirebaseAuth } from '../hooks/useFirebaseAuth';
 import LazyImage from './LazyImage';
 
 interface HeaderProps {
@@ -13,7 +13,7 @@ const Header: React.FC<HeaderProps> = ({
   onStartFree, 
   showAuthButtons = true 
 }) => {
-  const { user, signOut } = useAuth();
+  const { user, signOut } = useFirebaseAuth();
 
   const handleSignOut = async () => {
     try {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Shield, Smartphone, ArrowRight, AlertCircle } from 'lucide-react';
-import { useAuth } from '../hooks/useAuth';
+import { useFirebaseAuth } from '../hooks/useFirebaseAuth';
 import { ConfirmationResult } from 'firebase/auth';
 
 interface SignInModalProps {
@@ -17,16 +17,17 @@ const SignInModal: React.FC<SignInModalProps> = ({ isOpen, onClose, onSwitchToSi
   const [error, setError] = useState('');
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   
-  const { sendOTP, verifyOTP, cleanupRecaptcha } = useAuth();
+  const { sendOTP, verifyOTP } = useFirebaseAuth();
 
   useEffect(() => {
-    // Cleanup recaptcha when component unmounts or modal closes
-    return () => {
-      if (!isOpen) {
-        cleanupRecaptcha();
-      }
-    };
-  }, [isOpen, cleanupRecaptcha]);
+    // Reset form when modal closes
+    if (!isOpen) {
+      setStep('mobile');
+      setOtp('');
+      setError('');
+      setConfirmationResult(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -90,7 +91,6 @@ window.location.href = 'https://app.portfolyze.com';
     setStep('mobile');
     setError('');
     setConfirmationResult(null);
-    cleanupRecaptcha();
   };
 
   const handleClose = () => {
