@@ -134,39 +134,46 @@ function Dashboard() {
             </div>
           ) : (
             <main className="max-w-7xl mx-auto">
-              {loadingStates[activeTab] ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600 mx-auto mb-3"></div>
-                    <p className="text-gray-600 text-sm">Loading {activeTab}...</p>
+              <div className="relative">
+                {/* Subtle loading indicator for active tab */}
+                {loadingStates[activeTab] && (
+                  <div className="absolute top-0 left-0 right-0 z-10">
+                    <div className="h-1 bg-blue-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-600 rounded-full animate-pulse"></div>
+                    </div>
+                    <div className="bg-blue-50 px-4 py-2 text-center">
+                      <p className="text-blue-700 text-sm">Loading {activeTab} data...</p>
+                    </div>
                   </div>
-                </div>
-              ) : activeTab === 'trades' ? (
-                <ErrorBoundary>
-                  <TradesTable
-                    trades={filteredTrades}
-                    onAddTrade={addTrade}
-                    onUpdateTrade={updateTrade}
-                    onDeleteTrade={deleteTrade}
-                  />
-                </ErrorBoundary>
-              ) : activeTab === 'holdings' ? (
-                <ErrorBoundary>
-                  <CurrentHoldingsTable 
-                    holdings={holdings} 
-                    onRefreshPrices={updateAllPrices}
-                    isLoadingPrices={isLoadingPrices}
-                  />
-                </ErrorBoundary>
-              ) : (
-                <ErrorBoundary>
-                  <InvestmentBucketsTable 
-                    buckets={buckets} 
-                    onUpdateBucketTarget={updateBucketTarget}
-                    onUpdateBucketPurpose={updateBucketPurpose}
-                  />
-                </ErrorBoundary>
-              )}
+                )}
+                
+                {activeTab === 'trades' ? (
+                  <ErrorBoundary>
+                    <TradesTable
+                      trades={filteredTrades}
+                      onAddTrade={addTrade}
+                      onUpdateTrade={updateTrade}
+                      onDeleteTrade={deleteTrade}
+                    />
+                  </ErrorBoundary>
+                ) : activeTab === 'holdings' ? (
+                  <ErrorBoundary>
+                    <CurrentHoldingsTable 
+                      holdings={holdings} 
+                      onRefreshPrices={updateAllPrices}
+                      isLoadingPrices={isLoadingPrices}
+                    />
+                  </ErrorBoundary>
+                ) : (
+                  <ErrorBoundary>
+                    <InvestmentBucketsTable 
+                      buckets={buckets} 
+                      onUpdateBucketTarget={updateBucketTarget}
+                      onUpdateBucketPurpose={updateBucketPurpose}
+                    />
+                  </ErrorBoundary>
+                )}
+              </div>
             </main>
           )}
         </div>
