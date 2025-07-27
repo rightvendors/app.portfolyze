@@ -144,14 +144,14 @@ function Dashboard() {
                 {loadingStates[activeTab] && (
                   <div className="absolute top-0 left-0 right-0 z-10">
                     <div className="h-1 bg-blue-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-600 rounded-full animate-pulse"></div>
+                      <div className="h-full bg-blue-600 rounded-full animate-pulse w-full"></div>
                     </div>
-                    <div className="bg-blue-50 px-4 py-2 text-center flex items-center justify-center gap-4">
+                    <div className="bg-blue-50 px-4 py-1 text-center flex items-center justify-center gap-4">
                       <p className="text-blue-700 text-sm">Loading {activeTab} data...</p>
                       {activeTab === 'trades' && (
                         <button 
                           onClick={forceReloadTrades}
-                          className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                          className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded hover:bg-blue-700"
                         >
                           Force Reload
                         </button>
