@@ -63,7 +63,9 @@ const MobileAuthForm: React.FC<MobileAuthFormProps> = ({ onAuthSuccess, onClose 
     clearError();
 
     try {
+      console.log('Sending OTP...');
       await sendOtp(phoneNumber);
+      console.log('OTP sent successfully');
     } catch (error) {
       console.error('Error sending OTP:', error);
     } finally {

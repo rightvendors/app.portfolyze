@@ -58,12 +58,19 @@ export const useFirebaseAuth = () => {
       const verifier = new RecaptchaVerifier(auth, containerId, {
         size: 'invisible',
         callback: () => {
-          // reCAPTCHA solved, allow signInWithPhoneNumber
+          console.log('reCAPTCHA solved successfully');
         },
         'expired-callback': () => {
+          console.warn('reCAPTCHA expired');
           setError('reCAPTCHA expired. Please try again.');
         }
       });
+      
+      // Pre-render the reCAPTCHA to make it ready
+      verifier.render().catch((error) => {
+        console.error('reCAPTCHA render error:', error);
+      });
+      
       setRecaptchaVerifier(verifier);
       return verifier;
     }
@@ -79,15 +86,36 @@ export const useFirebaseAuth = () => {
       // Ensure phone number is in international format
       const formattedPhone = phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`;
       
-      const verifier = initializeRecaptcha();
-      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, verifier);
+      // Initialize reCAPTCHA if not already done
+      let verifier = recaptchaVerifier;
+      if (!verifier) {
+        console.log('Initializing reCAPTCHA...');
+        verifier = initializeRecaptcha();
+        // Small delay to let reCAPTCHA render
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
       
+      console.log('Sending OTP to:', formattedPhone);
+      
+      // Add timeout for better user experience
+      const otpPromise = signInWithPhoneNumber(auth, formattedPhone, verifier);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('OTP sending timeout')), 15000); // 15 seconds
+      });
+      
+      const confirmation = await Promise.race([otpPromise, timeoutPromise]);
+      
+      console.log('OTP sent successfully');
       setConfirmationResult(confirmation);
       setIsOtpSent(true);
       return confirmation;
     } catch (error: any) {
       console.error('Error sending OTP:', error);
-      setError(getErrorMessage(error.code));
+      if (error.message === 'OTP sending timeout') {
+        setError('OTP sending is taking longer than expected. Please try again.');
+      } else {
+        setError(getErrorMessage(error.code));
+      }
       throw error;
     } finally {
       setLoading(false);
