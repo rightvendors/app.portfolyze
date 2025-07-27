@@ -43,6 +43,9 @@ function Dashboard() {
   // Load data when tab changes (lazy loading)
   const handleTabChange = (tab: 'trades' | 'holdings' | 'buckets') => {
     setActiveTab(tab);
+    
+    // Always load the tab data - the load functions have their own guards
+    // to prevent reloading if already subscribed
     loadTabData(tab);
   };
 

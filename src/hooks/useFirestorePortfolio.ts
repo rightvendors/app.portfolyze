@@ -159,7 +159,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     
     setSubscriptions(prev => ({ ...prev, holdings: unsubscribe }));
     setLoadingStates(prev => ({ ...prev, holdings: false }));
-  }, [subscriptions.holdings, trades, priceCache]);
+  }, [subscriptions.holdings]);
 
   const loadBuckets = useCallback((userId: string) => {
     if (subscriptions.buckets) return; // Already subscribed
@@ -184,7 +184,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     
     setSubscriptions(prev => ({ ...prev, buckets: unsubscribe }));
     setLoadingStates(prev => ({ ...prev, buckets: false }));
-  }, [subscriptions.buckets, trades, buckets, priceCache]);
+  }, [subscriptions.buckets]);
 
   // Load user data when user changes
   useEffect(() => {
@@ -217,12 +217,18 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
             loadTrades(user.uid);
             break;
           case 'holdings':
-            loadTrades(user.uid); // Need trades for calculations
-            setTimeout(() => loadHoldings(user.uid), 300);
+            // Only load trades if not already loaded
+            if (!subscriptions.trades) {
+              loadTrades(user.uid);
+            }
+            setTimeout(() => loadHoldings(user.uid), 200);
             break;
           case 'buckets':
-            loadTrades(user.uid); // Need trades for calculations
-            setTimeout(() => loadBuckets(user.uid), 300);
+            // Only load trades if not already loaded
+            if (!subscriptions.trades) {
+              loadTrades(user.uid);
+            }
+            setTimeout(() => loadBuckets(user.uid), 200);
             break;
         }
       }, 150); // Load data after UI is shown
