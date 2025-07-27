@@ -11,7 +11,7 @@ import CurrentHoldingsTable from './components/CurrentHoldingsTable';
 import InvestmentBucketsTable from './components/InvestmentBucketsTable';
 import FilterBar from './components/FilterBar';
 import { FileText, TrendingUp, Target } from 'lucide-react';
-import SignIn from './pages/SignIn'; // You need to create this file
+import SignInPage from './pages/SignInPage';
 
 function Dashboard() {
   const { user } = useFirebaseAuth();
@@ -38,7 +38,7 @@ function Dashboard() {
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50 flex flex-col">
-        <Header showAuthButtons={false} />
+        <Header showAuthButtons={true} />
 
         <div className="flex-1">
           {/* App Title */}
@@ -159,8 +159,8 @@ function AppWrapper() {
   return (
     <Router>
       <Routes>
-        <Route path="/signin" element={<SignIn />} />
-        <Route path="/*" element={<App />} />
+        <Route path="/signin" element={<SignInPage />} />
+                  <Route path="/*" element={<Dashboard />} />
       </Routes>
     </Router>
   );
