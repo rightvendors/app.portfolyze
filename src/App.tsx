@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { useFirestorePortfolio } from './hooks/useFirestorePortfolio';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useFirebaseAuth } from './hooks/useFirebaseAuth';
+import { useFirestorePortfolio } from './hooks/useFirestorePortfolio';
 import ErrorBoundary from './components/ErrorBoundary';
 import AuthGuard from './components/AuthGuard';
 import Header from './components/Header';
@@ -10,8 +11,9 @@ import CurrentHoldingsTable from './components/CurrentHoldingsTable';
 import InvestmentBucketsTable from './components/InvestmentBucketsTable';
 import FilterBar from './components/FilterBar';
 import { FileText, TrendingUp, Target } from 'lucide-react';
+import SignIn from './pages/SignIn'; // You need to create this file
 
-function App() {
+function Dashboard() {
   const { user } = useFirebaseAuth();
   const {
     trades,
@@ -62,11 +64,7 @@ function App() {
           {/* Error Display */}
           {error && (
             <div className="bg-red-50 border-l-4 border-red-400 p-4 mx-4 mt-4">
-              <div className="flex">
-                <div className="ml-3">
-                  <p className="text-sm text-red-700">{error}</p>
-                </div>
-              </div>
+              <p className="text-sm text-red-700">{error}</p>
             </div>
           )}
 
@@ -74,39 +72,21 @@ function App() {
           <nav className="bg-white border-b border-gray-200">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="flex space-x-8">
-                <button
-                  onClick={() => setActiveTab('trades')}
-                  className={`flex items-center gap-2 py-3 px-1 border-b-2 font-medium text-xs ${
-                    activeTab === 'trades'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <FileText size={12} />
-                  Trades
-                </button>
-                <button
-                  onClick={() => setActiveTab('holdings')}
-                  className={`flex items-center gap-2 py-3 px-1 border-b-2 font-medium text-xs ${
-                    activeTab === 'holdings'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <TrendingUp size={12} />
-                  Current Holdings
-                </button>
-                <button
-                  onClick={() => setActiveTab('buckets')}
-                  className={`flex items-center gap-2 py-3 px-1 border-b-2 font-medium text-xs ${
-                    activeTab === 'buckets'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Target size={12} />
-                  Investment Buckets
-                </button>
+                {['trades', 'holdings', 'buckets'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab as any)}
+                    className={`flex items-center gap-2 py-3 px-1 border-b-2 font-medium text-xs ${
+                      activeTab === tab
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    {tab === 'trades' ? <FileText size={12} /> :
+                     tab === 'holdings' ? <TrendingUp size={12} /> : <Target size={12} />}
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
               </div>
             </div>
           </nav>
@@ -121,7 +101,6 @@ function App() {
               filteredRecords={filteredTrades.length}
             />
           )}
-          
           {activeTab === 'holdings' && (
             <FilterBar
               filters={filters}
@@ -130,18 +109,15 @@ function App() {
             />
           )}
 
-          {/* Loading State */}
-          {loading && (
+          {/* Main Content */}
+          {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
                 <p className="text-gray-600">Loading your portfolio...</p>
               </div>
             </div>
-          )}
-
-          {/* Main Content */}
-          {!loading && (
+          ) : (
             <main className="max-w-7xl mx-auto">
               {activeTab === 'trades' ? (
                 <ErrorBoundary>
@@ -160,7 +136,7 @@ function App() {
                     isLoadingPrices={isLoadingPrices}
                   />
                 </ErrorBoundary>
-              ) : activeTab === 'buckets' ? (
+              ) : (
                 <ErrorBoundary>
                   <InvestmentBucketsTable 
                     buckets={buckets} 
@@ -168,15 +144,26 @@ function App() {
                     onUpdateBucketPurpose={updateBucketPurpose}
                   />
                 </ErrorBoundary>
-              ) : null}
+              )}
             </main>
           )}
         </div>
-        
+
         <Footer />
       </div>
     </AuthGuard>
   );
 }
 
-export default App;
+function AppWrapper() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/signin" element={<SignIn />} />
+        <Route path="/*" element={<App />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default AppWrapper;
