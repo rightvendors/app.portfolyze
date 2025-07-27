@@ -105,15 +105,87 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     setLoadingStates(prev => ({ ...prev, trades: true }));
     
     try {
-      // Connect to Firestore for real data
-      const unsubscribe = firestoreService.subscribeToUserTrades(userId, (userTrades) => {
-        setTrades(userTrades);
-        setLoadingStates(prev => ({ ...prev, trades: false }));
-      });
+      // Load sample data immediately for development
+      const sampleTrades: Trade[] = [
+        {
+          id: '1',
+          date: '2024-01-15',
+          investmentType: 'stock',
+          name: 'RELIANCE',
+          isin: '',
+          transactionType: 'buy',
+          quantity: 50,
+          buyRate: 2400.00,
+          buyAmount: 120000,
+          brokerBank: 'Zerodha',
+          bucketAllocation: 'bucket1a'
+        },
+        {
+          id: '2',
+          date: '2024-02-10',
+          investmentType: 'stock',
+          name: 'TCS',
+          isin: '',
+          transactionType: 'buy',
+          quantity: 30,
+          buyRate: 3500.00,
+          buyAmount: 105000,
+          brokerBank: 'Upstox',
+          bucketAllocation: 'bucket1b'
+        },
+        {
+          id: '3',
+          date: '2024-01-20',
+          investmentType: 'mutual_fund',
+          isin: 'INF200K01158',
+          name: 'SBI Bluechip Fund Direct Growth',
+          transactionType: 'buy',
+          quantity: 1500,
+          buyRate: 65.45,
+          buyAmount: 98175,
+          brokerBank: 'SBI MF',
+          bucketAllocation: 'bucket2'
+        },
+        {
+          id: '4',
+          date: '2024-03-05',
+          investmentType: 'stock',
+          name: 'INFY',
+          isin: '',
+          transactionType: 'buy',
+          quantity: 60,
+          buyRate: 1700.00,
+          buyAmount: 102000,
+          brokerBank: 'ICICI Direct',
+          bucketAllocation: 'bucket3'
+        },
+        {
+          id: '5',
+          date: '2024-02-28',
+          investmentType: 'mutual_fund',
+          isin: 'INF179K01158',
+          name: 'HDFC Top 100 Fund Direct Growth',
+          transactionType: 'buy',
+          quantity: 150,
+          buyRate: 780.32,
+          buyAmount: 117048,
+          brokerBank: 'HDFC MF',
+          bucketAllocation: 'bucket2'
+        }
+      ];
+      
+      // Set sample data immediately
+      setTrades(sampleTrades);
+      setLoadingStates(prev => ({ ...prev, trades: false }));
+      
+      // Create a mock unsubscribe function
+      const unsubscribe = () => {
+        console.log('Mock trades subscription unsubscribed');
+      };
       
       setSubscriptions(prev => ({ ...prev, trades: unsubscribe }));
     } catch (error) {
-      console.error('Error loading trades from Firestore:', error);
+      console.error('Error setting up trades loading:', error);
       setError('Failed to load trades data');
       setLoadingStates(prev => ({ ...prev, trades: false }));
     }
@@ -214,7 +286,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
             setTimeout(() => loadBuckets(user.uid), 200);
             break;
         }
-      }, 50); // Load data after UI is shown
+      }, 150); // Load data after UI is shown
     } else {
       // Original behavior - load all data
       setLoading(true);

@@ -12,8 +12,8 @@ import FilterBar from './components/FilterBar';
 import { FileText, TrendingUp, Target } from 'lucide-react';
 
 function Dashboard() {
-  const { user } = useFirebaseAuth(); // Re-enabled for Firestore
-  // const user = { uid: 'temp-user', displayName: 'Test User', phoneNumber: '+91-9999999999' }; // Mock user for development
+  // const { user } = useFirebaseAuth(); // Temporarily disabled
+  const user = { uid: 'temp-user', displayName: 'Test User', phoneNumber: '+91-9999999999' }; // Mock user for development
   const [activeTab, setActiveTab] = useState<'trades' | 'holdings' | 'buckets'>('trades');
   
   const {
