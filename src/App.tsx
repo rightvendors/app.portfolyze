@@ -13,6 +13,8 @@ import { FileText, TrendingUp, Target } from 'lucide-react';
 
 function Dashboard() {
   const { user } = useFirebaseAuth();
+  const [activeTab, setActiveTab] = useState<'trades' | 'holdings' | 'buckets'>('trades');
+  
   const {
     trades,
     filteredTrades,
@@ -20,6 +22,7 @@ function Dashboard() {
     buckets,
     filters,
     loading,
+    loadingStates,
     error,
     isLoadingPrices,
     setFilters,
@@ -28,10 +31,18 @@ function Dashboard() {
     deleteTrade,
     updateBucketTarget,
     updateBucketPurpose,
-    updateAllPrices
-  } = useFirestorePortfolio();
+    updateAllPrices,
+    loadTabData
+  } = useFirestorePortfolio({ 
+    enableLazyLoading: true, 
+    initialTab: activeTab 
+  });
 
-  const [activeTab, setActiveTab] = useState<'trades' | 'holdings' | 'buckets'>('trades');
+  // Load data when tab changes (lazy loading)
+  const handleTabChange = (tab: 'trades' | 'holdings' | 'buckets') => {
+    setActiveTab(tab);
+    loadTabData(tab);
+  };
 
   return (
     <AuthGuard>
@@ -73,17 +84,22 @@ function Dashboard() {
                 {['trades', 'holdings', 'buckets'].map((tab) => (
                   <button
                     key={tab}
-                    onClick={() => setActiveTab(tab as any)}
+                    onClick={() => handleTabChange(tab as any)}
                     className={`flex items-center gap-2 py-3 px-1 border-b-2 font-medium text-xs ${
                       activeTab === tab
                         ? 'border-blue-500 text-blue-600'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
-                  >
-                    {tab === 'trades' ? <FileText size={12} /> :
-                     tab === 'holdings' ? <TrendingUp size={12} /> : <Target size={12} />}
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </button>
+                    disabled={loadingStates[tab as keyof typeof loadingStates]}
+                                      >
+                      {loadingStates[tab as keyof typeof loadingStates] ? (
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current"></div>
+                      ) : (
+                        tab === 'trades' ? <FileText size={12} /> :
+                        tab === 'holdings' ? <TrendingUp size={12} /> : <Target size={12} />
+                      )}
+                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </button>
                 ))}
               </div>
             </div>
@@ -112,7 +128,7 @@ function Dashboard() {
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">Loading your portfolio...</p>
+                <p className="text-gray-600">Loading {activeTab}...</p>
               </div>
             </div>
           ) : (

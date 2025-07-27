@@ -5,15 +5,31 @@ import { useFirebaseAuth } from './useFirebaseAuth';
 import { getMutualFundService } from '../services/mutualFundApi';
 import { getBreezeService } from '../services/breezeApi';
 
-export const useFirestorePortfolio = () => {
+interface UseFirestorePortfolioOptions {
+  enableLazyLoading?: boolean;
+  initialTab?: 'trades' | 'holdings' | 'buckets';
+}
+
+export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}) => {
+  const { enableLazyLoading = true, initialTab = 'trades' } = options;
   const { user } = useFirebaseAuth();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [filteredTrades, setFilteredTrades] = useState<Trade[]>([]);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [buckets, setBuckets] = useState<BucketSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingStates, setLoadingStates] = useState({
+    trades: false,
+    holdings: false,
+    buckets: false
+  });
   const [error, setError] = useState<string | null>(null);
   const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+  const [subscriptions, setSubscriptions] = useState<{
+    trades?: () => void;
+    holdings?: () => void;
+    buckets?: () => void;
+  }>({});
   
   const [filters, setFilters] = useState<FilterState>({
     investmentType: '',
@@ -49,62 +65,122 @@ export const useFirestorePortfolio = () => {
       }
       
       // Try Mutual Fund API for mutual funds
-      if (type === 'mutual_fund' && !price) {
+      if (!price && type === 'mutual_fund') {
         const mutualFundService = getMutualFundService();
-        price = await mutualFundService.getNAV(symbol);
+        price = await mutualFundService.getNavPrice(symbol);
       }
       
-      // Fallback to mock data
-      if (!price || price <= 0) {
-        price = Math.random() * 1000 + 100; // Mock price
+      // Cache the result
+      if (price !== null) {
+        setPriceCache(prev => ({
+          ...prev,
+          [cacheKey]: { price, timestamp: now }
+        }));
+        return price;
       }
       
-      // Cache the price
-      setPriceCache(prev => ({
-        ...prev,
-        [cacheKey]: { price, timestamp: now }
-      }));
-      
-      return price;
+      return priceCache[cacheKey]?.price || 100;
     } catch (error) {
       console.error(`Error fetching price for ${symbol}:`, error);
       return priceCache[cacheKey]?.price || 100;
     }
   }, [priceCache]);
 
+  // Lazy loading functions for each data type
+  const loadTrades = useCallback((userId: string) => {
+    if (subscriptions.trades) return; // Already subscribed
+    
+    setLoadingStates(prev => ({ ...prev, trades: true }));
+    
+    const unsubscribe = firestoreService.subscribeToUserTrades(userId, (userTrades) => {
+      setTrades(userTrades);
+      setLoadingStates(prev => ({ ...prev, trades: false }));
+      if (initialTab === 'trades') {
+        setLoading(false);
+      }
+    });
+    
+    setSubscriptions(prev => ({ ...prev, trades: unsubscribe }));
+  }, [subscriptions.trades, initialTab]);
+
+  const loadHoldings = useCallback((userId: string) => {
+    if (subscriptions.holdings) return; // Already subscribed
+    
+    setLoadingStates(prev => ({ ...prev, holdings: true }));
+    
+    const unsubscribe = firestoreService.subscribeToUserHoldings(userId, (userHoldings) => {
+      setHoldings(userHoldings);
+      setLoadingStates(prev => ({ ...prev, holdings: false }));
+      if (initialTab === 'holdings') {
+        setLoading(false);
+      }
+    });
+    
+    setSubscriptions(prev => ({ ...prev, holdings: unsubscribe }));
+  }, [subscriptions.holdings, initialTab]);
+
+  const loadBuckets = useCallback((userId: string) => {
+    if (subscriptions.buckets) return; // Already subscribed
+    
+    setLoadingStates(prev => ({ ...prev, buckets: true }));
+    
+    const unsubscribe = firestoreService.subscribeToUserBuckets(userId, (userBuckets) => {
+      setBuckets(userBuckets);
+      setLoadingStates(prev => ({ ...prev, buckets: false }));
+      if (initialTab === 'buckets') {
+        setLoading(false);
+      }
+    });
+    
+    setSubscriptions(prev => ({ ...prev, buckets: unsubscribe }));
+  }, [subscriptions.buckets, initialTab]);
+
   // Load user data when user changes
   useEffect(() => {
     if (!user) {
+      // Cleanup subscriptions
+      Object.values(subscriptions).forEach(unsubscribe => unsubscribe && unsubscribe());
+      setSubscriptions({});
+      
       setTrades([]);
       setHoldings([]);
       setBuckets([]);
       setLoading(false);
+      setLoadingStates({ trades: false, holdings: false, buckets: false });
       return;
     }
 
     setLoading(true);
     setError(null);
 
-    // Subscribe to real-time updates
-    const unsubscribeTrades = firestoreService.subscribeToUserTrades(user.uid, (userTrades) => {
-      setTrades(userTrades);
-      setLoading(false);
-    });
-
-    const unsubscribeHoldings = firestoreService.subscribeToUserHoldings(user.uid, (userHoldings) => {
-      setHoldings(userHoldings);
-    });
-
-    const unsubscribeBuckets = firestoreService.subscribeToUserBuckets(user.uid, (userBuckets) => {
-      setBuckets(userBuckets);
-    });
+    if (enableLazyLoading) {
+      // Only load initial tab data immediately
+      setTimeout(() => {
+        switch (initialTab) {
+          case 'trades':
+            loadTrades(user.uid);
+            break;
+          case 'holdings':
+            loadHoldings(user.uid);
+            break;
+          case 'buckets':
+            loadBuckets(user.uid);
+            break;
+        }
+      }, 100); // Small delay to prevent immediate heavy load
+    } else {
+      // Original behavior - load all data immediately
+      setTimeout(() => {
+        loadTrades(user.uid);
+        loadHoldings(user.uid);
+        loadBuckets(user.uid);
+      }, 100);
+    }
 
     return () => {
-      unsubscribeTrades();
-      unsubscribeHoldings();
-      unsubscribeBuckets();
+      Object.values(subscriptions).forEach(unsubscribe => unsubscribe && unsubscribe());
     };
-  }, [user]);
+  }, [user, enableLazyLoading, initialTab, loadTrades, loadHoldings, loadBuckets]);
 
   // Apply filters to trades
   useEffect(() => {
@@ -123,26 +199,41 @@ export const useFirestorePortfolio = () => {
     }
     
     if (filters.search) {
-      const searchTerm = filters.search.toLowerCase();
+      const searchLower = filters.search.toLowerCase();
       filtered = filtered.filter(trade => 
-        trade.name.toLowerCase().includes(searchTerm) ||
-        trade.investmentType.toLowerCase().includes(searchTerm) ||
-        trade.transactionType.toLowerCase().includes(searchTerm) ||
-        trade.bucketAllocation.toLowerCase().includes(searchTerm) ||
-        trade.date.includes(searchTerm)
+        trade.name.toLowerCase().includes(searchLower) ||
+        trade.isin.toLowerCase().includes(searchLower) ||
+        trade.brokerBank.toLowerCase().includes(searchLower)
       );
     }
     
     if (filters.dateFrom) {
-      filtered = filtered.filter(trade => new Date(trade.date) >= new Date(filters.dateFrom));
+      filtered = filtered.filter(trade => trade.date >= filters.dateFrom);
     }
     
     if (filters.dateTo) {
-      filtered = filtered.filter(trade => new Date(trade.date) <= new Date(filters.dateTo));
+      filtered = filtered.filter(trade => trade.date <= filters.dateTo);
     }
     
     setFilteredTrades(filtered);
   }, [trades, filters]);
+
+  // Function to manually load data for specific tabs (for lazy loading)
+  const loadTabData = useCallback((tab: 'trades' | 'holdings' | 'buckets') => {
+    if (!user) return;
+    
+    switch (tab) {
+      case 'trades':
+        loadTrades(user.uid);
+        break;
+      case 'holdings':
+        loadHoldings(user.uid);
+        break;
+      case 'buckets':
+        loadBuckets(user.uid);
+        break;
+    }
+  }, [user, loadTrades, loadHoldings, loadBuckets]);
 
   // CRUD Operations
   const addTrade = async (trade: Omit<Trade, 'id' | 'buyAmount'>) => {
@@ -491,6 +582,7 @@ export const useFirestorePortfolio = () => {
     
     // State
     loading,
+    loadingStates, // Added loadingStates to the return object
     error,
     isLoadingPrices,
     filters,
@@ -503,6 +595,7 @@ export const useFirestorePortfolio = () => {
     updateBucketTarget,
     updateBucketPurpose,
     updateAllPrices,
+    loadTabData, // Added loadTabData to the return object
     
     // Utils
     clearError: () => setError(null)
