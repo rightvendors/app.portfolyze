@@ -12,8 +12,7 @@ interface UseFirestorePortfolioOptions {
 
 export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}) => {
   const { enableLazyLoading = true, initialTab = 'trades' } = options;
-  // const { user } = useFirebaseAuth(); // Temporarily disabled
-  const user = { uid: 'temp-user' }; // Mock user for development
+  const { user } = useFirebaseAuth(); // Firebase authentication reactivated
   const [trades, setTrades] = useState<Trade[]>([]);
   const [filteredTrades, setFilteredTrades] = useState<Trade[]>([]);
   const [holdings, setHoldings] = useState<Holding[]>([]);
