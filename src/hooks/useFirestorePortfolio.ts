@@ -104,87 +104,33 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     
     setLoadingStates(prev => ({ ...prev, trades: true }));
     
-    try {
-      // Load sample data immediately for development
-      const sampleTrades: Trade[] = [
-        {
-          id: '1',
-          date: '2024-01-15',
-          investmentType: 'stock',
-          name: 'RELIANCE',
-          isin: '',
-          transactionType: 'buy',
-          quantity: 50,
-          buyRate: 2400.00,
-          buyAmount: 120000,
-          brokerBank: 'Zerodha',
-          bucketAllocation: 'bucket1a'
-        },
-        {
-          id: '2',
-          date: '2024-02-10',
-          investmentType: 'stock',
-          name: 'TCS',
-          isin: '',
-          transactionType: 'buy',
-          quantity: 30,
-          buyRate: 3500.00,
-          buyAmount: 105000,
-          brokerBank: 'Upstox',
-          bucketAllocation: 'bucket1b'
-        },
-        {
-          id: '3',
-          date: '2024-01-20',
-          investmentType: 'mutual_fund',
-          isin: 'INF200K01158',
-          name: 'SBI Bluechip Fund Direct Growth',
-          transactionType: 'buy',
-          quantity: 1500,
-          buyRate: 65.45,
-          buyAmount: 98175,
-          brokerBank: 'SBI MF',
-          bucketAllocation: 'bucket2'
-        },
-        {
-          id: '4',
-          date: '2024-03-05',
-          investmentType: 'stock',
-          name: 'INFY',
-          isin: '',
-          transactionType: 'buy',
-          quantity: 60,
-          buyRate: 1700.00,
-          buyAmount: 102000,
-          brokerBank: 'ICICI Direct',
-          bucketAllocation: 'bucket3'
-        },
-        {
-          id: '5',
-          date: '2024-02-28',
-          investmentType: 'mutual_fund',
-          isin: 'INF179K01158',
-          name: 'HDFC Top 100 Fund Direct Growth',
-          transactionType: 'buy',
-          quantity: 150,
-          buyRate: 780.32,
-          buyAmount: 117048,
-          brokerBank: 'HDFC MF',
-          bucketAllocation: 'bucket2'
-        }
-      ];
-      
-      // Set sample data immediately
-      setTrades(sampleTrades);
+    // Add timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      console.warn('Trades loading timeout - clearing loading state');
       setLoadingStates(prev => ({ ...prev, trades: false }));
-      
-      // Create a mock unsubscribe function
-      const unsubscribe = () => {
-        console.log('Mock trades subscription unsubscribed');
-      };
-      
-      setSubscriptions(prev => ({ ...prev, trades: unsubscribe }));
+    }, 10000); // 10 seconds timeout
+    
+    try {
+      // First try to get data immediately, then set up subscription
+      firestoreService.getUserTrades(userId).then((initialTrades) => {
+        setTrades(initialTrades);
+        setLoadingStates(prev => ({ ...prev, trades: false }));
+        clearTimeout(timeoutId);
+        
+        // Then set up real-time subscription
+        const unsubscribe = firestoreService.subscribeToUserTrades(userId, (userTrades) => {
+          setTrades(userTrades);
+        });
+        
+        setSubscriptions(prev => ({ ...prev, trades: unsubscribe }));
+      }).catch((error) => {
+        clearTimeout(timeoutId);
+        console.error('Error loading trades:', error);
+        setError('Failed to load trades data');
+        setLoadingStates(prev => ({ ...prev, trades: false }));
+      });
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error('Error setting up trades loading:', error);
       setError('Failed to load trades data');
       setLoadingStates(prev => ({ ...prev, trades: false }));
@@ -377,7 +323,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     // Reload after a brief delay
     setTimeout(() => {
       loadTrades(user.uid);
-    }, 50);
+    }, 100);
   }, [user, subscriptions.trades, loadTrades]);
 
   // CRUD Operations
