@@ -11,10 +11,6 @@ interface AuthGuardProps {
 const AuthGuard: React.FC<AuthGuardProps> = ({ children, fallback }) => {
   const { user, loading } = useFirebaseAuth();
 
-  // TEMPORARY: Bypass authentication for development
-  // Remove this block when authentication is needed again
-  return <>{children}</>;
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
