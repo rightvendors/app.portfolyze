@@ -511,6 +511,19 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     };
   }, [user, enableLazyLoading, initialTab, loadTrades, loadHoldings, loadBuckets, fastInitialLoad]);
 
+  // Auto-recalculate holdings and buckets when trades change
+  useEffect(() => {
+    if (trades.length > 0 && hasLoadedInitialData) {
+      // Recalculate holdings
+      const newHoldings = calculateCurrentHoldings();
+      setCalculatedHoldings(newHoldings);
+      
+      // Recalculate buckets
+      const newBuckets = calculateBucketSummary();
+      setCalculatedBuckets(newBuckets);
+    }
+  }, [trades, calculateCurrentHoldings, calculateBucketSummary, hasLoadedInitialData]);
+
   // Enhanced filters with asset type and value range support
   useEffect(() => {
     let filtered = trades;
@@ -630,13 +643,19 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     if (!user) throw new Error('User not authenticated');
     
     try {
-      const updatedTrade = { ...updates };
-      if (updates.quantity && updates.buyRate) {
-        updatedTrade.buyAmount = updates.quantity * updates.buyRate;
-      }
-      
       // Store original trade for rollback
       const originalTrade = trades.find(t => t.id === id);
+      if (!originalTrade) throw new Error('Trade not found');
+      
+      const updatedTrade = { ...updates };
+      
+      // Calculate buyAmount when quantity OR buyRate changes
+      const newQuantity = updates.quantity !== undefined ? updates.quantity : originalTrade.quantity;
+      const newBuyRate = updates.buyRate !== undefined ? updates.buyRate : originalTrade.buyRate;
+      
+      if (updates.quantity !== undefined || updates.buyRate !== undefined) {
+        updatedTrade.buyAmount = newQuantity * newBuyRate;
+      }
       
       // Update local state immediately for better UX
       setTrades(prev => prev.map(trade => 
