@@ -1,18 +1,56 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Trade, Holding, BucketSummary, FilterState } from '../types/portfolio';
 import { firestoreService } from '../services/firestoreService';
 import { useFirebaseAuth } from './useFirebaseAuth';
 import { getMutualFundService } from '../services/mutualFundApi';
 import { getBreezeService } from '../services/breezeApi';
+import { writeBatch, doc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 
 interface UseFirestorePortfolioOptions {
   enableLazyLoading?: boolean;
   initialTab?: 'trades' | 'holdings' | 'buckets';
 }
 
+// Enhanced filter interface with asset type filtering
+interface EnhancedFilterState extends FilterState {
+  assetType?: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'index_fund' | 'etf' | '';
+  minValue?: number;
+  maxValue?: number;
+}
+
+// XIRR calculation utility
+const calculateXIRR = (cashFlows: { date: Date; amount: number }[]): number => {
+  if (cashFlows.length < 2) return 0;
+  
+  // Simple approximation using IRR formula
+  // For production, consider using a proper XIRR library like 'xirr' npm package
+  const sortedFlows = cashFlows.sort((a, b) => a.date.getTime() - b.date.getTime());
+  const firstDate = sortedFlows[0].date;
+  const lastDate = sortedFlows[sortedFlows.length - 1].date;
+  const years = (lastDate.getTime() - firstDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  
+  if (years <= 0) return 0;
+  
+  const totalInvested = sortedFlows.slice(0, -1).reduce((sum, flow) => sum + Math.abs(flow.amount), 0);
+  const finalValue = Math.abs(sortedFlows[sortedFlows.length - 1].amount);
+  
+  if (totalInvested <= 0) return 0;
+  
+  return ((Math.pow(finalValue / totalInvested, 1 / years) - 1) * 100);
+};
+
+// Memoized price cache with better structure
+interface PriceCacheEntry {
+  price: number;
+  timestamp: number;
+  retryCount: number;
+  lastError?: string;
+}
+
 export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}) => {
   const { enableLazyLoading = true, initialTab = 'trades' } = options;
-  const { user } = useFirebaseAuth(); // Firebase authentication reactivated
+  const { user } = useFirebaseAuth();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [filteredTrades, setFilteredTrades] = useState<Trade[]>([]);
   const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -21,7 +59,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   const [loadingStates, setLoadingStates] = useState({
     trades: false,
     holdings: false,
-    buckets: false
+    buckets: false,
+    prices: false
   });
   const [error, setError] = useState<string | null>(null);
   const [isLoadingPrices, setIsLoadingPrices] = useState(false);
@@ -31,37 +70,67 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     buckets?: () => void;
   }>({});
   
-  // Calculated data states - only calculate when needed
+  // Enhanced calculated data states
   const [calculatedHoldings, setCalculatedHoldings] = useState<Holding[]>([]);
   const [calculatedBuckets, setCalculatedBuckets] = useState<BucketSummary[]>([]);
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
   
-  const [filters, setFilters] = useState<FilterState>({
+  // Enhanced filters with asset type support
+  const [filters, setFilters] = useState<EnhancedFilterState>({
     investmentType: '',
     buckets: '',
     transactionType: '',
     search: '',
     dateFrom: '',
-    dateTo: ''
+    dateTo: '',
+    assetType: '',
+    minValue: undefined,
+    maxValue: undefined
   });
 
-  const [priceCache, setPriceCache] = useState<{ [key: string]: { price: number; timestamp: number } }>({});
+  // Enhanced price cache with retry logic and error tracking
+  const [priceCache, setPriceCache] = useState<{ [key: string]: PriceCacheEntry }>({});
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  const MAX_RETRY_COUNT = 3;
+
+  // Performance optimization: Memoized unique investments
+  const uniqueInvestments = useMemo(() => {
+    const investmentMap = new Map<string, { type: string; lastTradeDate: string }>();
+    trades.forEach(trade => {
+      if (trade.name.trim()) {
+        const existing = investmentMap.get(trade.name);
+        if (!existing || trade.date > existing.lastTradeDate) {
+          investmentMap.set(trade.name, {
+            type: trade.investmentType,
+            lastTradeDate: trade.date
+          });
+        }
+      }
+    });
+    return investmentMap;
+  }, [trades]);
 
   // Fast initial load - show interface immediately
   const fastInitialLoad = useCallback(() => {
-    setLoading(false); // Show interface immediately
+    setLoading(false);
     setHasLoadedInitialData(true);
   }, []);
 
-  // Fetch real-time price with caching
+  // Enhanced price fetching with retry logic and better error handling
   const fetchRealTimePrice = useCallback(async (symbol: string, type: string): Promise<number> => {
     const cacheKey = `${symbol}-${type}`;
     const now = Date.now();
+    const cacheEntry = priceCache[cacheKey];
     
     // Check cache first
-    if (priceCache[cacheKey] && (now - priceCache[cacheKey].timestamp) < CACHE_DURATION) {
-      return priceCache[cacheKey].price;
+    if (cacheEntry && (now - cacheEntry.timestamp) < CACHE_DURATION) {
+      return cacheEntry.price;
+    }
+    
+    // Skip if too many retries
+    if (cacheEntry && cacheEntry.retryCount >= MAX_RETRY_COUNT) {
+      console.warn(`Max retries reached for ${symbol}, using cached price`);
+      return cacheEntry.price;
     }
     
     try {
@@ -81,303 +150,94 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         price = await mutualFundService.getNavPrice(symbol);
       }
       
-      // Cache the result
+      // Cache the result with success
       if (price !== null) {
         setPriceCache(prev => ({
           ...prev,
-          [cacheKey]: { price, timestamp: now }
+          [cacheKey]: { 
+            price, 
+            timestamp: now, 
+            retryCount: 0,
+            lastError: undefined
+          }
         }));
         return price;
       }
       
-      return priceCache[cacheKey]?.price || 100;
+      // No price found, increment retry count
+      const retryCount = (cacheEntry?.retryCount || 0) + 1;
+      const fallbackPrice = cacheEntry?.price || 100;
+      
+      setPriceCache(prev => ({
+        ...prev,
+        [cacheKey]: {
+          price: fallbackPrice,
+          timestamp: now,
+          retryCount,
+          lastError: 'No price source available'
+        }
+      }));
+      
+      return fallbackPrice;
     } catch (error) {
       console.error(`Error fetching price for ${symbol}:`, error);
-      return priceCache[cacheKey]?.price || 100;
+      
+      const retryCount = (cacheEntry?.retryCount || 0) + 1;
+      const fallbackPrice = cacheEntry?.price || 100;
+      
+      setPriceCache(prev => ({
+        ...prev,
+        [cacheKey]: {
+          price: fallbackPrice,
+          timestamp: now,
+          retryCount,
+          lastError: error instanceof Error ? error.message : 'Unknown error'
+        }
+      }));
+      
+      return fallbackPrice;
     }
   }, [priceCache]);
 
-  // Lazy loading functions for each data type
-  const loadTrades = useCallback((userId: string) => {
-    if (subscriptions.trades) return; // Already subscribed
+  // Optimized trades loading with better error handling
+  const loadTrades = useCallback(async (userId: string) => {
+    if (subscriptions.trades) return; // Prevent duplicate subscriptions
     
     setLoadingStates(prev => ({ ...prev, trades: true }));
     
-    // Add timeout to prevent infinite loading
-    const timeoutId = setTimeout(() => {
-      console.warn('Trades loading timeout - clearing loading state');
-      setLoadingStates(prev => ({ ...prev, trades: false }));
-    }, 10000); // 10 seconds timeout
-    
     try {
-      // First try to get data immediately, then set up subscription
-      firestoreService.getUserTrades(userId).then((initialTrades) => {
-        setTrades(initialTrades);
+      // First, get immediate data
+      const immediateData = await firestoreService.getUserTrades(userId);
+      setTrades(immediateData);
+      
+      // Then set up real-time subscription with timeout
+      const timeoutId = setTimeout(() => {
+        console.warn('Trades subscription timeout');
         setLoadingStates(prev => ({ ...prev, trades: false }));
+      }, 10000);
+      
+      const unsubscribe = firestoreService.subscribeToUserTrades(userId, (newTrades) => {
         clearTimeout(timeoutId);
-        
-        // Then set up real-time subscription
-        const unsubscribe = firestoreService.subscribeToUserTrades(userId, (userTrades) => {
-          setTrades(userTrades);
-        });
-        
-        setSubscriptions(prev => ({ ...prev, trades: unsubscribe }));
-      }).catch((error) => {
-        clearTimeout(timeoutId);
-        console.error('Error loading trades:', error);
-        setError('Failed to load trades data');
+        setTrades(newTrades);
         setLoadingStates(prev => ({ ...prev, trades: false }));
+        setError(null);
       });
+      
+      setSubscriptions(prev => ({ ...prev, trades: unsubscribe }));
     } catch (error) {
-      clearTimeout(timeoutId);
-      console.error('Error setting up trades loading:', error);
-      setError('Failed to load trades data');
+      console.error('Error loading trades:', error);
+      setError('Failed to load trades');
       setLoadingStates(prev => ({ ...prev, trades: false }));
     }
   }, [subscriptions.trades]);
 
-  const loadHoldings = useCallback((userId: string) => {
-    if (subscriptions.holdings) return; // Already subscribed
-    
-    setLoadingStates(prev => ({ ...prev, holdings: true }));
-    
-    // Use a background calculation to avoid blocking UI
-    setTimeout(() => {
-      const calculatedHoldingsData = calculateCurrentHoldings();
-      setCalculatedHoldings(calculatedHoldingsData);
-    }, 100);
-    
-    const unsubscribe = firestoreService.subscribeToUserHoldings(userId, (userHoldings) => {
-      setHoldings(userHoldings);
-      // Recalculate with fresh data in background
-      setTimeout(() => {
-        const updatedHoldings = calculateCurrentHoldings();
-        setCalculatedHoldings(updatedHoldings);
-      }, 100);
-      setLoadingStates(prev => ({ ...prev, holdings: false }));
-    });
-    
-    setSubscriptions(prev => ({ ...prev, holdings: unsubscribe }));
-    setLoadingStates(prev => ({ ...prev, holdings: false }));
-  }, [subscriptions.holdings]);
-
-  const loadBuckets = useCallback((userId: string) => {
-    if (subscriptions.buckets) return; // Already subscribed
-    
-    setLoadingStates(prev => ({ ...prev, buckets: true }));
-    
-    // Use a background calculation to avoid blocking UI
-    setTimeout(() => {
-      const calculatedBucketsData = calculateBucketSummary();
-      setCalculatedBuckets(calculatedBucketsData);
-    }, 100);
-    
-    const unsubscribe = firestoreService.subscribeToUserBuckets(userId, (userBuckets) => {
-      setBuckets(userBuckets);
-      // Recalculate with fresh data in background
-      setTimeout(() => {
-        const updatedBuckets = calculateBucketSummary();
-        setCalculatedBuckets(updatedBuckets);
-      }, 100);
-      setLoadingStates(prev => ({ ...prev, buckets: false }));
-    });
-    
-    setSubscriptions(prev => ({ ...prev, buckets: unsubscribe }));
-    setLoadingStates(prev => ({ ...prev, buckets: false }));
-  }, [subscriptions.buckets]);
-
-  // Load user data when user changes
-  useEffect(() => {
-    if (!user) {
-      // Cleanup subscriptions
-      Object.values(subscriptions).forEach(unsubscribe => unsubscribe && unsubscribe());
-      setSubscriptions({});
-      
-      setTrades([]);
-      setHoldings([]);
-      setBuckets([]);
-      setCalculatedHoldings([]);
-      setCalculatedBuckets([]);
-      setLoading(false);
-      setLoadingStates({ trades: false, holdings: false, buckets: false });
-      setHasLoadedInitialData(false);
-      return;
-    }
-
-    setError(null);
-
-    if (enableLazyLoading) {
-      // Show interface immediately, then load data progressively
-      fastInitialLoad();
-      
-      // Load initial tab data after interface is shown
-      setTimeout(() => {
-        switch (initialTab) {
-          case 'trades':
-            loadTrades(user.uid);
-            break;
-          case 'holdings':
-            // Only load trades if not already loaded
-            if (!subscriptions.trades) {
-              loadTrades(user.uid);
-            }
-            setTimeout(() => loadHoldings(user.uid), 200);
-            break;
-          case 'buckets':
-            // Only load trades if not already loaded
-            if (!subscriptions.trades) {
-              loadTrades(user.uid);
-            }
-            setTimeout(() => loadBuckets(user.uid), 200);
-            break;
-        }
-      }, 150); // Load data after UI is shown
-    } else {
-      // Original behavior - load all data
-      setLoading(true);
-      setTimeout(() => {
-        loadTrades(user.uid);
-        loadHoldings(user.uid);
-        loadBuckets(user.uid);
-        setLoading(false);
-      }, 100);
-    }
-
-    return () => {
-      Object.values(subscriptions).forEach(unsubscribe => unsubscribe && unsubscribe());
-    };
-  }, [user, enableLazyLoading, initialTab, loadTrades, loadHoldings, loadBuckets, fastInitialLoad]);
-
-  // Apply filters to trades
-  useEffect(() => {
-    let filtered = trades;
-    
-    if (filters.investmentType) {
-      filtered = filtered.filter(trade => trade.investmentType === filters.investmentType);
-    }
-    
-    if (filters.buckets) {
-      filtered = filtered.filter(trade => trade.bucketAllocation === filters.buckets);
-    }
-    
-    if (filters.transactionType) {
-      filtered = filtered.filter(trade => trade.transactionType === filters.transactionType);
-    }
-    
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(trade => 
-        trade.name.toLowerCase().includes(searchLower) ||
-        trade.isin.toLowerCase().includes(searchLower) ||
-        trade.brokerBank.toLowerCase().includes(searchLower)
-      );
-    }
-    
-    if (filters.dateFrom) {
-      filtered = filtered.filter(trade => trade.date >= filters.dateFrom);
-    }
-    
-    if (filters.dateTo) {
-      filtered = filtered.filter(trade => trade.date <= filters.dateTo);
-    }
-    
-    setFilteredTrades(filtered);
-  }, [trades, filters]);
-
-  // Function to manually load data for specific tabs (for lazy loading)
-  const loadTabData = useCallback((tab: 'trades' | 'holdings' | 'buckets') => {
-    if (!user) return;
-    
-    console.log(`Loading tab data for: ${tab}`);
-    
-    switch (tab) {
-      case 'trades':
-        loadTrades(user.uid);
-        break;
-      case 'holdings':
-        loadHoldings(user.uid);
-        break;
-      case 'buckets':
-        loadBuckets(user.uid);
-        break;
-    }
-  }, [user, loadTrades, loadHoldings, loadBuckets]);
-
-  // Force reload function for troubleshooting
-  const forceReloadTrades = useCallback(() => {
-    if (!user) return;
-    
-    console.log('Force reloading trades...');
-    
-    // Clear existing subscription
-    if (subscriptions.trades) {
-      subscriptions.trades();
-      setSubscriptions(prev => ({ ...prev, trades: undefined }));
-    }
-    
-    // Clear loading state and data
-    setLoadingStates(prev => ({ ...prev, trades: false }));
-    setTrades([]);
-    
-    // Reload after a brief delay
-    setTimeout(() => {
-      loadTrades(user.uid);
-    }, 100);
-  }, [user, subscriptions.trades, loadTrades]);
-
-  // CRUD Operations
-  const addTrade = async (trade: Omit<Trade, 'id' | 'buyAmount'>) => {
-    if (!user) throw new Error('User not authenticated');
-    
-    try {
-      const newTrade = {
-        ...trade,
-        buyAmount: trade.quantity * trade.buyRate
-      };
-      
-      await firestoreService.addTrade(user.uid, newTrade);
-      // Real-time listener will update the state
-    } catch (error) {
-      setError('Failed to add trade');
-      throw error;
-    }
-  };
-
-  const updateTrade = async (id: string, updates: Partial<Trade>) => {
-    if (!user) throw new Error('User not authenticated');
-    
-    try {
-      const updatedTrade = { ...updates };
-      if (updates.quantity !== undefined && updates.buyRate !== undefined) {
-        updatedTrade.buyAmount = updates.quantity * updates.buyRate;
-      }
-      
-      await firestoreService.updateTrade(user.uid, id, updatedTrade);
-      // Real-time listener will update the state
-    } catch (error) {
-      setError('Failed to update trade');
-      throw error;
-    }
-  };
-
-  const deleteTrade = async (id: string) => {
-    if (!user) throw new Error('User not authenticated');
-    
-    try {
-      await firestoreService.deleteTrade(user.uid, id);
-      // Real-time listener will update the state
-    } catch (error) {
-      setError('Failed to delete trade');
-      throw error;
-    }
-  };
-
-  // Calculate current holdings from trades
+  // Optimized holdings calculation with FIFO and cleanup of zero quantities
   const calculateCurrentHoldings = useCallback((): Holding[] => {
+    if (trades.length === 0) return [];
+
     const holdingsMap = new Map<string, {
-      name: string;
       investmentType: string;
-      bucketAllocation?: string;
+      bucketAllocation: string;
       transactions: Array<{
         date: string;
         type: 'buy' | 'sell';
@@ -389,11 +249,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
 
     // Group trades by name
     trades.forEach(trade => {
-      if (!trade.name || trade.name.trim() === '') return;
-      
       if (!holdingsMap.has(trade.name)) {
         holdingsMap.set(trade.name, {
-          name: trade.name,
           investmentType: trade.investmentType,
           bucketAllocation: trade.bucketAllocation,
           transactions: []
@@ -410,7 +267,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       });
     });
 
-    // Calculate holdings using FIFO principle
+    // Calculate holdings using FIFO principle with enhanced logic
     const calculatedHoldings: Holding[] = [];
     
     for (const [name, data] of holdingsMap) {
@@ -421,6 +278,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       let netQuantity = 0;
       let totalInvestedAmount = 0;
       let remainingBuys: Array<{ quantity: number; price: number; date: string }> = [];
+      const cashFlows: { date: Date; amount: number }[] = [];
       
       sortedTransactions.forEach(transaction => {
         if (transaction.type === 'buy') {
@@ -431,6 +289,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
           });
           netQuantity += transaction.quantity;
           totalInvestedAmount += transaction.amount;
+          cashFlows.push({ date: new Date(transaction.date), amount: -transaction.amount });
         } else if (transaction.type === 'sell') {
           let sellQuantity = transaction.quantity;
           
@@ -449,9 +308,11 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
           }
           
           netQuantity -= transaction.quantity;
+          cashFlows.push({ date: new Date(transaction.date), amount: transaction.amount });
         }
       });
       
+      // Only include holdings with positive quantity (cleanup zero quantities)
       if (netQuantity > 0 && totalInvestedAmount > 0) {
         const averageBuyPrice = totalInvestedAmount / netQuantity;
         const cacheKey = `${name}-${data.investmentType}`;
@@ -460,11 +321,16 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         const gainLossAmount = currentValue - totalInvestedAmount;
         const gainLossPercent = totalInvestedAmount > 0 ? (gainLossAmount / totalInvestedAmount) * 100 : 0;
         
+        // Enhanced XIRR calculation
+        const finalCashFlow = { date: new Date(), amount: currentValue };
+        const allCashFlows = [...cashFlows, finalCashFlow];
+        const xirr = calculateXIRR(allCashFlows);
+        
+        // Improved annualized return calculation
         const firstBuyDate = sortedTransactions.find(t => t.type === 'buy')?.date || new Date().toISOString();
         const daysDiff = Math.abs(new Date().getTime() - new Date(firstBuyDate).getTime()) / (1000 * 60 * 60 * 24);
-        const years = Math.max(daysDiff / 365, 1/365);
-        const annualYield = (Math.pow(currentValue / totalInvestedAmount, 1 / years) - 1) * 100;
-        const xirr = annualYield; // Simplified XIRR calculation
+        const years = Math.max(daysDiff / 365.25, 1/365.25);
+        const annualYield = totalInvestedAmount > 0 ? (Math.pow(currentValue / totalInvestedAmount, 1 / years) - 1) * 100 : 0;
         
         calculatedHoldings.push({
           name,
@@ -477,8 +343,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
           currentValue,
           gainLossAmount,
           gainLossPercent,
-          annualYield,
-          xirr
+          annualYield: isFinite(annualYield) ? annualYield : 0,
+          xirr: isFinite(xirr) ? xirr : annualYield
         });
       }
     }
@@ -486,14 +352,14 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     return calculatedHoldings.sort((a, b) => b.currentValue - a.currentValue);
   }, [trades, priceCache]);
 
-  // Calculate bucket summary
+  // Enhanced bucket calculation with improved XIRR logic
   const calculateBucketSummary = useCallback((): BucketSummary[] => {
     const defaultBuckets = {
-      'bucket1a': { targetAmount: 500000, purpose: '' },
-      'bucket1b': { targetAmount: 300000, purpose: '' },
-      'bucket1c': { targetAmount: 200000, purpose: '' },
-      'bucket1d': { targetAmount: 150000, purpose: '' },
-      'bucket1e': { targetAmount: 100000, purpose: '' },
+      'bucket1a': { targetAmount: 500000, purpose: 'Emergency Fund' },
+      'bucket1b': { targetAmount: 300000, purpose: 'Short Term Goals' },
+      'bucket1c': { targetAmount: 200000, purpose: 'Medium Term Goals' },
+      'bucket1d': { targetAmount: 150000, purpose: 'Retirement Planning' },
+      'bucket1e': { targetAmount: 100000, purpose: 'Tax Saving' },
       'bucket2': { targetAmount: 400000, purpose: 'Monthly income for financial freedom' },
       'bucket3': { targetAmount: 250000, purpose: 'Get rich with compounding power' }
     };
@@ -522,7 +388,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       }
     });
 
-    // Calculate bucket summaries
+    // Calculate bucket summaries with enhanced metrics
     const bucketSummaries: BucketSummary[] = [];
     
     for (const [bucketName, data] of bucketMap) {
@@ -530,14 +396,22 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       const investedAmount = data.holdings.reduce((sum, h) => sum + h.investedAmount, 0);
       const gainLossAmount = currentValue - investedAmount;
       const gainLossPercent = investedAmount > 0 ? (gainLossAmount / investedAmount) * 100 : 0;
-      const progressPercent = data.targetAmount > 0 ? (currentValue / data.targetAmount) * 100 : 0;
+      const progressPercent = data.targetAmount > 0 ? Math.min((currentValue / data.targetAmount) * 100, 100) : 0;
       
+      // Enhanced weighted returns calculation
       const totalValue = data.holdings.reduce((sum, h) => sum + h.currentValue, 0);
-      const annualYield = totalValue > 0 
-        ? data.holdings.reduce((sum, h) => sum + (h.annualYield * h.currentValue), 0) / totalValue
+      const weightedAnnualYield = totalValue > 0 
+        ? data.holdings.reduce((sum, h) => {
+            const weight = h.currentValue / totalValue;
+            return sum + (h.annualYield * weight);
+          }, 0)
         : 0;
-      const xirr = totalValue > 0 
-        ? data.holdings.reduce((sum, h) => sum + (h.xirr * h.currentValue), 0) / totalValue
+      
+      const weightedXirr = totalValue > 0 
+        ? data.holdings.reduce((sum, h) => {
+            const weight = h.currentValue / totalValue;
+            return sum + (h.xirr * weight);
+          }, 0)
         : 0;
 
       bucketSummaries.push({
@@ -550,15 +424,223 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         gainLossPercent,
         progressPercent,
         holdingsCount: data.holdings.length,
-        annualYield,
-        xirr
+        annualYield: isFinite(weightedAnnualYield) ? weightedAnnualYield : 0,
+        xirr: isFinite(weightedXirr) ? weightedXirr : weightedAnnualYield
       });
     }
 
     return bucketSummaries.sort((a, b) => a.bucketName.localeCompare(b.bucketName));
-  }, [trades, buckets, priceCache, calculateCurrentHoldings]);
+  }, [buckets, calculateCurrentHoldings]);
 
-  // Update bucket target
+  // Optimized lazy loading functions
+  const loadHoldings = useCallback(async (userId: string) => {
+    if (subscriptions.holdings) return;
+    
+    setLoadingStates(prev => ({ ...prev, holdings: true }));
+    
+    setTimeout(() => {
+      const calculated = calculateCurrentHoldings();
+      setCalculatedHoldings(calculated);
+      setLoadingStates(prev => ({ ...prev, holdings: false }));
+    }, 200);
+  }, [calculateCurrentHoldings, subscriptions.holdings]);
+
+  const loadBuckets = useCallback(async (userId: string) => {
+    if (subscriptions.buckets) return;
+    
+    setLoadingStates(prev => ({ ...prev, buckets: true }));
+    
+    setTimeout(() => {
+      const calculated = calculateBucketSummary();
+      setCalculatedBuckets(calculated);
+      setLoadingStates(prev => ({ ...prev, buckets: false }));
+    }, 200);
+  }, [calculateBucketSummary, subscriptions.buckets]);
+
+  // Enhanced user effect with better lifecycle management
+  useEffect(() => {
+    if (!user) {
+      // Cleanup on user logout
+      Object.values(subscriptions).forEach(unsubscribe => unsubscribe && unsubscribe());
+      setSubscriptions({});
+      setTrades([]);
+      setCalculatedHoldings([]);
+      setCalculatedBuckets([]);
+      setLoading(false);
+      setLoadingStates({ trades: false, holdings: false, buckets: false, prices: false });
+      setHasLoadedInitialData(false);
+      return;
+    }
+
+    setError(null);
+
+    if (enableLazyLoading) {
+      fastInitialLoad();
+      
+      setTimeout(() => {
+        switch (initialTab) {
+          case 'trades':
+            loadTrades(user.uid);
+            break;
+          case 'holdings':
+            if (!subscriptions.trades) {
+              loadTrades(user.uid);
+            }
+            setTimeout(() => loadHoldings(user.uid), 200);
+            break;
+          case 'buckets':
+            if (!subscriptions.trades) {
+              loadTrades(user.uid);
+            }
+            setTimeout(() => loadBuckets(user.uid), 200);
+            break;
+        }
+      }, 150);
+    } else {
+      setLoading(true);
+      setTimeout(() => {
+        loadTrades(user.uid);
+        loadHoldings(user.uid);
+        loadBuckets(user.uid);
+        setLoading(false);
+      }, 100);
+    }
+
+    return () => {
+      Object.values(subscriptions).forEach(unsubscribe => unsubscribe && unsubscribe());
+    };
+  }, [user, enableLazyLoading, initialTab, loadTrades, loadHoldings, loadBuckets, fastInitialLoad]);
+
+  // Enhanced filters with asset type and value range support
+  useEffect(() => {
+    let filtered = trades;
+    
+    if (filters.investmentType) {
+      filtered = filtered.filter(trade => trade.investmentType === filters.investmentType);
+    }
+    
+    if (filters.assetType) {
+      filtered = filtered.filter(trade => trade.investmentType === filters.assetType);
+    }
+    
+    if (filters.buckets) {
+      filtered = filtered.filter(trade => trade.bucketAllocation === filters.buckets);
+    }
+    
+    if (filters.transactionType) {
+      filtered = filtered.filter(trade => trade.transactionType === filters.transactionType);
+    }
+    
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      filtered = filtered.filter(trade => 
+        trade.name.toLowerCase().includes(searchLower) ||
+        (trade.isin && trade.isin.toLowerCase().includes(searchLower)) ||
+        trade.brokerBank.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    if (filters.dateFrom) {
+      filtered = filtered.filter(trade => trade.date >= filters.dateFrom);
+    }
+    
+    if (filters.dateTo) {
+      filtered = filtered.filter(trade => trade.date <= filters.dateTo);
+    }
+    
+    if (filters.minValue !== undefined) {
+      filtered = filtered.filter(trade => trade.buyAmount >= filters.minValue!);
+    }
+    
+    if (filters.maxValue !== undefined) {
+      filtered = filtered.filter(trade => trade.buyAmount <= filters.maxValue!);
+    }
+    
+    setFilteredTrades(filtered);
+  }, [trades, filters]);
+
+  // Function to manually load data for specific tabs
+  const loadTabData = useCallback((tab: 'trades' | 'holdings' | 'buckets') => {
+    if (!user) return;
+    
+    console.log(`Loading tab data for: ${tab}`);
+    
+    switch (tab) {
+      case 'trades':
+        loadTrades(user.uid);
+        break;
+      case 'holdings':
+        loadHoldings(user.uid);
+        break;
+      case 'buckets':
+        loadBuckets(user.uid);
+        break;
+    }
+  }, [user, loadTrades, loadHoldings, loadBuckets]);
+
+  // Force reload function for troubleshooting
+  const forceReloadTrades = useCallback(() => {
+    if (!user) return;
+    
+    console.log('Force reloading trades...');
+    
+    if (subscriptions.trades) {
+      subscriptions.trades();
+      setSubscriptions(prev => ({ ...prev, trades: undefined }));
+    }
+    
+    setLoadingStates(prev => ({ ...prev, trades: false }));
+    setTrades([]);
+    
+    setTimeout(() => {
+      loadTrades(user.uid);
+    }, 100);
+  }, [user, subscriptions.trades, loadTrades]);
+
+  // CRUD Operations with enhanced error handling
+  const addTrade = async (trade: Omit<Trade, 'id' | 'buyAmount'>) => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      const newTrade = {
+        ...trade,
+        buyAmount: trade.quantity * trade.buyRate
+      };
+      
+      await firestoreService.addTrade(user.uid, newTrade);
+    } catch (error) {
+      setError('Failed to add trade');
+      throw error;
+    }
+  };
+
+  const updateTrade = async (id: string, updates: Partial<Trade>) => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      const updatedTrade = { ...updates };
+      if (updates.quantity && updates.buyRate) {
+        updatedTrade.buyAmount = updates.quantity * updates.buyRate;
+      }
+      
+      await firestoreService.updateTrade(user.uid, id, updatedTrade);
+    } catch (error) {
+      setError('Failed to update trade');
+      throw error;
+    }
+  };
+
+  const deleteTrade = async (id: string) => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      await firestoreService.deleteTrade(user.uid, id);
+    } catch (error) {
+      setError('Failed to delete trade');
+      throw error;
+    }
+  };
+
   const updateBucketTarget = async (bucketName: string, targetAmount: number) => {
     if (!user) throw new Error('User not authenticated');
     
@@ -588,7 +670,6 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     }
   };
 
-  // Update bucket purpose
   const updateBucketPurpose = async (bucketName: string, purpose: string) => {
     if (!user) throw new Error('User not authenticated');
     
@@ -618,65 +699,144 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     }
   };
 
-  // Update all prices
+  // Enhanced price update with batch operations and better performance
   const updateAllPrices = async () => {
     setIsLoadingPrices(true);
+    setLoadingStates(prev => ({ ...prev, prices: true }));
     
     try {
-      const uniqueInvestments = new Map<string, string>();
-      
-      trades.forEach(trade => {
-        if (trade.name.trim()) {
-          uniqueInvestments.set(trade.name, trade.investmentType);
-        }
-      });
-      
-      // Fetch prices for all unique investments
-      const batchSize = 5;
+      // Use memoized unique investments for better performance
       const investments = Array.from(uniqueInvestments.entries());
+      
+      // Optimized batch processing
+      const batchSize = 3; // Reduced for better API rate limiting
+      const results: Array<{ name: string; type: string; price: number }> = [];
       
       for (let i = 0; i < investments.length; i += batchSize) {
         const batch = investments.slice(i, i + batchSize);
         
-        await Promise.all(
-          batch.map(([name, type]) => fetchRealTimePrice(name, type))
+        const batchResults = await Promise.allSettled(
+          batch.map(async ([name, data]) => {
+            const price = await fetchRealTimePrice(name, data.type);
+            return { name, type: data.type, price };
+          })
         );
         
+        batchResults.forEach((result) => {
+          if (result.status === 'fulfilled') {
+            results.push(result.value);
+          }
+        });
+        
+        // Rate limiting between batches
         if (i + batchSize < investments.length) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 200));
         }
       }
       
-      // Update holdings in Firestore
-      if (user) {
+      // Batch update to Firestore using the new service
+      if (user && results.length > 0) {
         const updatedHoldings = calculateCurrentHoldings();
-        await firestoreService.batchUpdateHoldings(user.uid, updatedHoldings);
-        
         const updatedBuckets = calculateBucketSummary();
-        await firestoreService.batchUpdateBuckets(user.uid, updatedBuckets);
+        
+        // Use batch write for better performance
+        await persistCalculatedData(user.uid, updatedHoldings, updatedBuckets);
+        
+        setCalculatedHoldings(updatedHoldings);
+        setCalculatedBuckets(updatedBuckets);
       }
     } catch (error) {
       console.error('Error updating prices:', error);
       setError('Failed to update prices');
     } finally {
       setIsLoadingPrices(false);
+      setLoadingStates(prev => ({ ...prev, prices: false }));
     }
   };
 
+  // New function to persist calculated data to Firestore using batch writes
+  const persistCalculatedData = async (userId: string, holdings: Holding[], bucketSummaries: BucketSummary[]) => {
+    try {
+      const batch = writeBatch(db);
+      
+      // Update holdings
+      holdings.forEach(holding => {
+        const holdingRef = doc(db, 'users', userId, 'holdings', holding.name);
+        batch.set(holdingRef, {
+          ...holding,
+          updatedAt: new Date(),
+          lastCalculated: new Date()
+        });
+      });
+      
+      // Update buckets
+      bucketSummaries.forEach(bucket => {
+        const bucketRef = doc(db, 'users', userId, 'buckets', bucket.bucketName);
+        batch.set(bucketRef, {
+          ...bucket,
+          updatedAt: new Date(),
+          lastCalculated: new Date()
+        });
+      });
+      
+      await batch.commit();
+      console.log('Successfully persisted calculated data to Firestore');
+    } catch (error) {
+      console.error('Error persisting calculated data:', error);
+      throw error;
+    }
+  };
+
+  // New function to filter holdings by asset type
+  const getHoldingsByAssetType = useCallback((assetType: string) => {
+    return calculatedHoldings.filter(holding => holding.investmentType === assetType);
+  }, [calculatedHoldings]);
+
+  // New function to cleanup zero-quantity holdings
+  const cleanupZeroHoldings = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const zeroHoldings = calculatedHoldings.filter(h => h.netQuantity <= 0);
+      
+      if (zeroHoldings.length > 0) {
+        const batch = writeBatch(db);
+        
+        zeroHoldings.forEach(holding => {
+          const holdingRef = doc(db, 'users', user.uid, 'holdings', holding.name);
+          batch.delete(holdingRef);
+        });
+        
+        await batch.commit();
+        
+        // Update local state
+        setCalculatedHoldings(prev => prev.filter(h => h.netQuantity > 0));
+        
+        console.log(`Cleaned up ${zeroHoldings.length} zero-quantity holdings`);
+      }
+    } catch (error) {
+      console.error('Error cleaning up zero holdings:', error);
+      setError('Failed to cleanup zero holdings');
+    }
+  }, [user, calculatedHoldings]);
+
+  // Enhanced return object with new features
   return {
     // Data
     trades,
     filteredTrades,
     holdings: calculatedHoldings,
     buckets: calculatedBuckets,
+    uniqueInvestments, // New: Expose unique investments for debugging
     
     // State
     loading,
-    loadingStates, // Added loadingStates to the return object
+    loadingStates,
     hasLoadedInitialData,
     error,
     isLoadingPrices,
     filters,
+    priceCache, // New: Expose price cache for debugging
     
     // Actions
     setFilters,
@@ -686,10 +846,25 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     updateBucketTarget,
     updateBucketPurpose,
     updateAllPrices,
-    loadTabData, // Added loadTabData to the return object
-    forceReloadTrades, // Added for troubleshooting
+    loadTabData,
+    forceReloadTrades,
+    
+    // New enhanced functions
+    getHoldingsByAssetType,
+    cleanupZeroHoldings,
+    persistCalculatedData,
     
     // Utils
-    clearError: () => setError(null)
+    clearError: () => setError(null),
+    clearPriceCache: () => setPriceCache({}), // New: Clear price cache
+    
+    // Performance metrics (for debugging)
+    performanceMetrics: {
+      tradesCount: trades.length,
+      holdingsCount: calculatedHoldings.length,
+      bucketsCount: calculatedBuckets.length,
+      cachedPricesCount: Object.keys(priceCache).length,
+      uniqueInvestmentsCount: uniqueInvestments.size
+    }
   };
 };
