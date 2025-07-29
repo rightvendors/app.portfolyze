@@ -601,14 +601,26 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   const addTrade = async (trade: Omit<Trade, 'id' | 'buyAmount'>) => {
     if (!user) throw new Error('User not authenticated');
     
+    const newTrade: Trade = {
+      ...trade,
+      id: Date.now().toString(), // Temporary ID until Firebase returns the real one
+      buyAmount: trade.quantity * trade.buyRate
+    };
+    
     try {
-      const newTrade = {
-        ...trade,
-        buyAmount: trade.quantity * trade.buyRate
-      };
+      // Update local state immediately for better UX
+      setTrades(prev => [...prev, newTrade]);
       
-      await firestoreService.addTrade(user.uid, newTrade);
+      // Then save to Firebase
+      const firebaseId = await firestoreService.addTrade(user.uid, newTrade);
+      
+      // Update the trade with the real Firebase ID
+      setTrades(prev => prev.map(t => 
+        t.id === newTrade.id ? { ...t, id: firebaseId } : t
+      ));
     } catch (error) {
+      // Remove the trade from local state if Firebase save failed
+      setTrades(prev => prev.filter(t => t.id !== newTrade.id));
       setError('Failed to add trade');
       throw error;
     }
@@ -623,8 +635,23 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         updatedTrade.buyAmount = updates.quantity * updates.buyRate;
       }
       
+      // Store original trade for rollback
+      const originalTrade = trades.find(t => t.id === id);
+      
+      // Update local state immediately for better UX
+      setTrades(prev => prev.map(trade => 
+        trade.id === id ? { ...trade, ...updatedTrade } : trade
+      ));
+      
+      // Then save to Firebase
       await firestoreService.updateTrade(user.uid, id, updatedTrade);
     } catch (error) {
+      // Rollback local state if Firebase save failed
+      if (originalTrade) {
+        setTrades(prev => prev.map(trade => 
+          trade.id === id ? originalTrade : trade
+        ));
+      }
       setError('Failed to update trade');
       throw error;
     }
@@ -634,8 +661,19 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     if (!user) throw new Error('User not authenticated');
     
     try {
+      // Store original trade for rollback
+      const originalTrade = trades.find(t => t.id === id);
+      
+      // Update local state immediately for better UX
+      setTrades(prev => prev.filter(trade => trade.id !== id));
+      
+      // Then delete from Firebase
       await firestoreService.deleteTrade(user.uid, id);
     } catch (error) {
+      // Rollback local state if Firebase delete failed
+      if (originalTrade) {
+        setTrades(prev => [...prev, originalTrade]);
+      }
       setError('Failed to delete trade');
       throw error;
     }
