@@ -126,6 +126,34 @@ class NAVService {
   getCacheSize(): number {
     return this.cache.size;
   }
+
+  // Debug method to test the service
+  async testService(): Promise<void> {
+    try {
+      console.log('Testing NAV service...');
+      const response = await fetch(this.SHEET_URL);
+      if (!response.ok) {
+        console.error('Failed to fetch CSV:', response.status, response.statusText);
+        return;
+      }
+
+      const csvText = await response.text();
+      console.log('Raw CSV data (first 500 chars):', csvText.substring(0, 500));
+      
+      const lines = csvText.split(/\r?\n/).filter(line => line.trim());
+      console.log('Total lines:', lines.length);
+      
+      if (lines.length > 0) {
+        console.log('Header:', lines[0]);
+        console.log('First 3 data lines:');
+        for (let i = 1; i < Math.min(4, lines.length); i++) {
+          console.log(`Line ${i}:`, lines[i]);
+        }
+      }
+    } catch (error) {
+      console.error('Error testing NAV service:', error);
+    }
+  }
 }
 
 export const navService = new NAVService();

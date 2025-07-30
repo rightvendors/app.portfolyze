@@ -148,6 +148,16 @@ const TradesTable: React.FC<TradesTableProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Test NAV service
+  const testNavService = async () => {
+    try {
+      console.log('Testing NAV service from TradesTable...');
+      await navService.testService();
+    } catch (error) {
+      console.error('Error testing NAV service:', error);
+    }
+  };
+
   // Import data from JSON file
   const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -579,6 +589,13 @@ const TradesTable: React.FC<TradesTableProps> = ({
           >
             <Plus size={10} />
             Add Row
+          </button>
+          
+          <button
+            onClick={testNavService}
+            className="flex items-center gap-1 px-2 py-1 bg-purple-500 text-white rounded text-xs hover:bg-purple-600 transition-colors"
+          >
+            Test NAV
           </button>
         </div>
       </div>
