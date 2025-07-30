@@ -719,18 +719,37 @@ const TradesTable: React.FC<TradesTableProps> = ({
           <div className="text-xs text-blue-800">
             <div className="font-medium mb-1">ISIN Number Instructions:</div>
             <div className="mb-2">
-              Enter 12-character ISIN number for mutual funds (e.g., INF209KA12Z1). 
+              Enter the 12-character ISIN number for mutual funds (e.g., INF209KA12Z1). 
               The scheme name will be auto-populated once a valid ISIN is entered.
             </div>
+            <div className="mb-2">
+              <div className="font-medium mb-1">How to find your ISIN number:</div>
+              <div className="mb-1">
+                Use our simple lookup page to search for ISIN numbers by mutual fund name.
+              </div>
+              <div className="mb-2">
+                All ISIN codes are listed with their corresponding schemes for your convenience.
+              </div>
+              <div className="mb-2">
+                <a 
+                  href="https://docs.google.com/spreadsheets/d/e/2PACX-1vRxCnHMu-PJUT_yp_rOfESXJ-mf7wDu0kEhEcWqAOWF0er8zEEEp3AabmRy-1yJIT2d8h-2nSckaNiU/pubhtml?gid=634852302&single=true" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 underline"
+                >
+                  View Mutual Fund ISIN Numbers
+                </a>
+              </div>
+            </div>
             <div>
-              Find ISIN numbers at: 
+              If you prefer, you can still use the official resource:
               <a 
                 href="https://www.amfiindia.com/net-asset-value/nav-search" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:text-blue-800 underline ml-1"
               >
-                AMFI NAV Search
+                AMFI NAV Search (Official)
               </a>
             </div>
           </div>
