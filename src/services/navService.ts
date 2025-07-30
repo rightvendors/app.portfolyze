@@ -13,7 +13,7 @@ interface NAVServiceResponse {
 }
 
 class NAVService {
-  private readonly SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7gAzBO2fhdWPcM5GUic1nrs0x45lAXwPY5P_CtxStppYLB2wkvOVKafduzw2Qd78mlP2GGNVK7dbl/pub?output=csv';
+  private readonly SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7gAzBO2fhdWPcM5GUic1nrs0x45lAXwPY5P_CtxStppYLB2wkvOVKafduzw2Qd78mlP2GGNVK7dbl/pub?gid=1833356118&single=true&output=csv';
   private cache: Map<string, { data: MutualFundData; timestamp: number }> = new Map();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
@@ -40,13 +40,19 @@ class NAVService {
       const lines = csvText.split(/\r?\n/).filter(line => line.trim());
       console.log('Number of lines in CSV:', lines.length);
       
-      // Log first few lines for debugging
-      if (lines.length > 0) {
-        console.log('Header line:', lines[0]);
-        if (lines.length > 1) {
-          console.log('First data line:', lines[1]);
-        }
+      // Check if we have any data
+      if (lines.length <= 1) {
+        console.log('No data found in Google Sheets (only header or empty)');
+        return { success: false, error: 'No data found in Google Sheets. Please ensure the sheet contains mutual fund data.' };
       }
+      
+      // Parse header to understand column structure
+      const headerColumns = this.parseCSVLine(lines[0]);
+      console.log('Header columns:', headerColumns);
+      
+      // Try to auto-detect column positions
+      const columnMap = this.detectColumnPositions(headerColumns);
+      console.log('Detected column mapping:', columnMap);
       
       // Skip header row and find matching ISIN
       for (let i = 1; i < lines.length; i++) {
@@ -56,12 +62,23 @@ class NAVService {
         const columns = this.parseCSVLine(line);
         console.log(`Line ${i} columns:`, columns);
         
-        if (columns.length < 4) {
+        if (columns.length < Math.max(columnMap.isin, columnMap.name, columnMap.nav, columnMap.date) + 1) {
           console.log(`Line ${i} has insufficient columns:`, columns.length);
           continue;
         }
 
-        const [csvISIN, schemeName, navStr, date] = columns;
+        const csvISIN = columns[columnMap.isin] || '';
+        const schemeName = columns[columnMap.name] || '';
+        const navStr = columns[columnMap.nav] || '';
+        const date = columns[columnMap.date] || '';
+        
+        // Skip rows with #N/A or empty values
+        if (csvISIN === '#N/A' || csvISIN.trim() === '' || 
+            schemeName === '#N/A' || schemeName.trim() === '' ||
+            navStr === '#N/A' || navStr.trim() === '') {
+          console.log(`Skipping row with invalid data:`, columns);
+          continue;
+        }
         
         if (csvISIN.trim().toUpperCase() === isin.trim().toUpperCase()) {
           const nav = parseFloat(navStr);
@@ -95,6 +112,27 @@ class NAVService {
         error: error instanceof Error ? error.message : 'Failed to fetch NAV data' 
       };
     }
+  }
+
+  private detectColumnPositions(headerColumns: string[]): { isin: number; name: number; nav: number; date: number } {
+    // Based on user's Google Sheets structure:
+    // ISIN = 2nd column (index 1)
+    // Name = 4th column (index 3)
+    // Current Price/NAV = 5th column (index 4)
+    // Date = 1st column (index 0) - assuming this is the case
+    
+    const isinIndex = 1;  // 2nd column
+    const nameIndex = 3;  // 4th column
+    const navIndex = 4;   // 5th column
+    const dateIndex = 0;  // 1st column (assuming)
+    
+    console.log(`Using fixed column mapping:`);
+    console.log(`  ISIN (2nd column): index ${isinIndex}`);
+    console.log(`  Name (4th column): index ${nameIndex}`);
+    console.log(`  NAV (5th column): index ${navIndex}`);
+    console.log(`  Date (1st column): index ${dateIndex}`);
+    
+    return { isin: isinIndex, name: nameIndex, nav: navIndex, date: dateIndex };
   }
 
   private parseCSVLine(line: string): string[] {
@@ -145,9 +183,22 @@ class NAVService {
       
       if (lines.length > 0) {
         console.log('Header:', lines[0]);
+        const headerColumns = this.parseCSVLine(lines[0]);
+        console.log('Header columns:', headerColumns);
+        console.log('Column mapping:');
+        console.log('  Column 1 (ISIN):', headerColumns[0] || 'NOT FOUND');
+        console.log('  Column 2 (Name):', headerColumns[1] || 'NOT FOUND');
+        console.log('  Column 3 (NAV/Value):', headerColumns[2] || 'NOT FOUND');
+        console.log('  Column 4 (Date):', headerColumns[3] || 'NOT FOUND');
+        
         console.log('First 3 data lines:');
         for (let i = 1; i < Math.min(4, lines.length); i++) {
-          console.log(`Line ${i}:`, lines[i]);
+          const dataColumns = this.parseCSVLine(lines[i]);
+          console.log(`Line ${i}:`, dataColumns);
+          console.log(`  ISIN: ${dataColumns[0] || 'N/A'}`);
+          console.log(`  Name: ${dataColumns[1] || 'N/A'}`);
+          console.log(`  NAV: ${dataColumns[2] || 'N/A'}`);
+          console.log(`  Date: ${dataColumns[3] || 'N/A'}`);
         }
       }
     } catch (error) {
