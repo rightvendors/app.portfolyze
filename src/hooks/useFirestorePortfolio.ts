@@ -104,14 +104,18 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
 
   // Performance optimization: Memoized unique investments
   const uniqueInvestments = useMemo(() => {
-    const investmentMap = new Map<string, { type: string; lastTradeDate: string }>();
+    const investmentMap = new Map<string, { type: string; lastTradeDate: string; isin?: string }>();
     trades.forEach(trade => {
       if (trade.name.trim()) {
-        const existing = investmentMap.get(trade.name);
+        // For mutual funds, use ISIN as key if available, otherwise use name
+        const key = (trade.investmentType === 'mutual_fund' && trade.isin) ? trade.isin : trade.name;
+        
+        const existing = investmentMap.get(key);
         if (!existing || trade.date > existing.lastTradeDate) {
-          investmentMap.set(trade.name, {
+          investmentMap.set(key, {
             type: trade.investmentType,
-            lastTradeDate: trade.date
+            lastTradeDate: trade.date,
+            isin: trade.isin
           });
         }
       }
@@ -156,7 +160,18 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       // Try Mutual Fund API for mutual funds
       if (!price && type === 'mutual_fund') {
         const mutualFundService = getMutualFundService();
-        price = await mutualFundService.getNavPrice(symbol);
+        // For mutual funds, try to get NAV by ISIN first, then by name
+        if (symbol.length === 12) { // ISIN is typically 12 characters
+          // Try to get NAV by ISIN
+          const navData = await mutualFundService.searchByISIN(symbol);
+          if (navData) {
+            price = navData.nav;
+          }
+        }
+        // If not found by ISIN, try by name
+        if (!price) {
+          price = await mutualFundService.getNavPrice(symbol);
+        }
       }
       
       // Cache the result with success
@@ -247,6 +262,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     const holdingsMap = new Map<string, {
       investmentType: string;
       bucketAllocation: string;
+      isin?: string;
       transactions: Array<{
         date: string;
         type: 'buy' | 'sell';
@@ -257,17 +273,21 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       }>;
     }>();
 
-    // Group trades by name
+    // Group trades by name (or ISIN for mutual funds)
     trades.forEach(trade => {
-      if (!holdingsMap.has(trade.name)) {
-        holdingsMap.set(trade.name, {
+      // For mutual funds, use ISIN as the key if available, otherwise use name
+      const key = (trade.investmentType === 'mutual_fund' && trade.isin) ? trade.isin : trade.name;
+      
+      if (!holdingsMap.has(key)) {
+        holdingsMap.set(key, {
           investmentType: trade.investmentType,
           bucketAllocation: trade.bucketAllocation,
+          isin: trade.isin,
           transactions: []
         });
       }
       
-      const holding = holdingsMap.get(trade.name)!;
+      const holding = holdingsMap.get(key)!;
       holding.transactions.push({
         date: trade.date,
         type: trade.transactionType,
@@ -326,7 +346,15 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       // Only include holdings with positive quantity (cleanup zero quantities)
       if (netQuantity > 0 && totalInvestedAmount > 0) {
         const averageBuyPrice = totalInvestedAmount / netQuantity;
-        const cacheKey = `${name}-${data.investmentType}`;
+        
+        // For mutual funds, use ISIN to look up NAV price, otherwise use name
+        let cacheKey: string;
+        if (data.investmentType === 'mutual_fund' && data.isin) {
+          cacheKey = `${data.isin}-${data.investmentType}`;
+        } else {
+          cacheKey = `${name}-${data.investmentType}`;
+        }
+        
         let currentPrice = priceCache[cacheKey]?.price || averageBuyPrice;
         let currentValue = netQuantity * currentPrice;
         
@@ -365,8 +393,16 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         const years = Math.max(daysDiff / 365.25, 1/365.25);
         const annualYield = totalInvestedAmount > 0 ? (Math.pow(currentValue / totalInvestedAmount, 1 / years) - 1) * 100 : 0;
         
+        // For mutual funds, get the name from the trades, not the ISIN key
+        let displayName = name;
+        if (data.investmentType === 'mutual_fund' && data.isin) {
+          // Find the first trade with this ISIN to get the name
+          const firstTrade = trades.find(trade => trade.isin === data.isin);
+          displayName = firstTrade?.name || name;
+        }
+        
         calculatedHoldings.push({
-          name,
+          name: displayName,
           investmentType: data.investmentType,
           bucketAllocation: data.bucketAllocation,
           netQuantity,
@@ -821,9 +857,9 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         const batch = investments.slice(i, i + batchSize);
         
         const batchResults = await Promise.allSettled(
-          batch.map(async ([name, data]) => {
-            const price = await fetchRealTimePrice(name, data.type);
-            return { name, type: data.type, price };
+          batch.map(async ([key, data]) => {
+            const price = await fetchRealTimePrice(key, data.type);
+            return { name: key, type: data.type, price, isin: data.isin };
           })
         );
         
