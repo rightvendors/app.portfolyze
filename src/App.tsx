@@ -37,7 +37,8 @@ function Dashboard() {
     updateBucketPurpose,
     updateAllPrices,
     loadTabData,
-    forceReloadTrades
+    forceReloadTrades,
+    updatePriceCacheWithNAV
   } = useFirestorePortfolio({ 
     enableLazyLoading: true, 
     initialTab: activeTab 
