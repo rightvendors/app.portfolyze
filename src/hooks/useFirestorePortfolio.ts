@@ -253,6 +253,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         quantity: number;
         price: number;
         amount: number;
+        interestRate?: number;
       }>;
     }>();
 
@@ -272,7 +273,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         type: trade.transactionType,
         quantity: trade.quantity,
         price: trade.buyRate,
-        amount: trade.buyAmount
+        amount: trade.buyAmount,
+        interestRate: trade.interestRate
       });
     });
 
@@ -330,15 +332,18 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         
         // Handle Fixed Deposit calculations
         if (data.investmentType === 'fixed_deposit') {
-          // Get interest rate from the latest trade
+          // Get the latest buy trade for fixed deposit
           const latestTrade = sortedTransactions
             .filter(t => t.type === 'buy')
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
           
-          if (latestTrade && typeof latestTrade.price === 'number' && latestTrade.price > 0) {
+          if (latestTrade && latestTrade.interestRate) {
+            // For fixed deposits: principal = Quantity × Rate
+            const principal = latestTrade.quantity * latestTrade.price;
+            
             const fdCalculation = calculateFixedDepositValue(
-              totalInvestedAmount,
-              latestTrade.price, // Using price field as interest rate
+              principal,
+              latestTrade.interestRate,
               latestTrade.date
             );
             currentValue = fdCalculation.maturityValue;

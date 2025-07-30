@@ -20,10 +20,10 @@ export const calculateFixedDepositValue = (
   const daysInvested = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
   const yearsInvested = daysInvested / 365.25;
   
-  // Compound interest calculation: A = P(1 + r/n)^(nt)
-  // For quarterly compounding (n=4)
-  const n = 4; // Quarterly compounding
-  const maturityValue = principal * Math.pow(1 + (annualInterestRate / 100) / n, n * yearsInvested);
+  // Simple compound interest calculation: A = P(1 + r)^n
+  // Where: principal = Quantity × Rate, rate = Interest Rate (%) / 100, n = years elapsed
+  const rate = annualInterestRate / 100; // Convert percentage to decimal
+  const maturityValue = principal * Math.pow(1 + rate, yearsInvested);
   const interestEarned = maturityValue - principal;
   
   return {
