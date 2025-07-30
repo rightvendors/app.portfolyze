@@ -925,6 +925,21 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     }
   }, [user, calculatedHoldings]);
 
+  // Function to update price cache with NAV data
+  const updatePriceCacheWithNAV = useCallback((isin: string, nav: number) => {
+    const cacheKey = `${isin}-mutual_fund`;
+    setPriceCache(prev => ({
+      ...prev,
+      [cacheKey]: {
+        price: nav,
+        timestamp: Date.now(),
+        retryCount: 0,
+        lastError: undefined
+      }
+    }));
+    console.log(`Updated price cache for ${isin} with NAV: ${nav}`);
+  }, []);
+
   // Enhanced return object with new features
   return {
     // Data
@@ -960,6 +975,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     getHoldingsByAssetType,
     cleanupZeroHoldings,
     persistCalculatedData,
+    updatePriceCacheWithNAV, // New: Function to update price cache with NAV data
     
     // Utils
     clearError: () => setError(null),

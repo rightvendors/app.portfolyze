@@ -9,13 +9,15 @@ interface TradesTableProps {
   onAddTrade: (trade: Omit<Trade, 'id' | 'buyAmount'>) => void;
   onUpdateTrade: (id: string, updates: Partial<Trade>) => void;
   onDeleteTrade: (id: string) => void;
+  updatePriceCacheWithNAV?: (isin: string, nav: number) => void;
 }
 
 const TradesTable: React.FC<TradesTableProps> = ({
   trades,
   onAddTrade,
   onUpdateTrade,
-  onDeleteTrade
+  onDeleteTrade,
+  updatePriceCacheWithNAV
 }) => {
   const [editingCell, setEditingCell] = useState<{ id: string; field: string } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
@@ -96,11 +98,17 @@ const TradesTable: React.FC<TradesTableProps> = ({
           nav: result.data.nav
         });
         
-        // Auto-update the trade with fetched data
+        // Auto-update only the name field, keep buyRate manual
         onUpdateTrade(tradeId, {
-          name: result.data.schemeName,
-          buyRate: result.data.nav
+          name: result.data.schemeName
         });
+        
+        // Update price cache with NAV data for holdings table current price calculation
+        if (updatePriceCacheWithNAV) {
+          updatePriceCacheWithNAV(result.data.isin, result.data.nav);
+        }
+        
+        console.log(`NAV data stored for holdings: ISIN=${result.data.isin}, NAV=${result.data.nav}`);
       } else {
         setIsinError(result.error || 'Failed to fetch mutual fund data');
       }

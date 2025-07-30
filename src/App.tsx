@@ -169,6 +169,7 @@ function Dashboard() {
                       onAddTrade={addTrade}
                       onUpdateTrade={updateTrade}
                       onDeleteTrade={deleteTrade}
+                      updatePriceCacheWithNAV={updatePriceCacheWithNAV}
                     />
                   </ErrorBoundary>
                 ) : activeTab === 'holdings' ? (
