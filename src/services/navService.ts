@@ -13,7 +13,7 @@ interface NAVServiceResponse {
 }
 
 class NAVService {
-  private readonly SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7gAzBO2fhdWPcM5GUic1nrs0x45lAXwPY5P_CtxStppYLB2wkvOVKafduzw2Qd78mlP2GGNVK7dbl/pub?gid=1833356118&single=true&output=csv';
+  private readonly SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7gAzBO2fhdWPcM5GUic1nrs0x45lAXwPY5P_CtxStppYLB2wkvOVKafduzw2Qd78mlP2GGNVK7dbl/pub?output=csv';
   private cache: Map<string, { data: MutualFundData; timestamp: number }> = new Map();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
@@ -25,6 +25,8 @@ class NAVService {
         return { success: true, data: cached.data };
       }
 
+      console.log(`Fetching NAV data for ISIN: ${isin}`);
+      
       // Fetch fresh data
       const response = await fetch(this.SHEET_URL);
       if (!response.ok) {
@@ -32,7 +34,19 @@ class NAVService {
       }
 
       const csvText = await response.text();
-      const lines = csvText.split('\n');
+      console.log('CSV data received, length:', csvText.length);
+      
+      // Handle different line endings
+      const lines = csvText.split(/\r?\n/).filter(line => line.trim());
+      console.log('Number of lines in CSV:', lines.length);
+      
+      // Log first few lines for debugging
+      if (lines.length > 0) {
+        console.log('Header line:', lines[0]);
+        if (lines.length > 1) {
+          console.log('First data line:', lines[1]);
+        }
+      }
       
       // Skip header row and find matching ISIN
       for (let i = 1; i < lines.length; i++) {
@@ -40,13 +54,19 @@ class NAVService {
         if (!line) continue;
 
         const columns = this.parseCSVLine(line);
-        if (columns.length < 4) continue;
+        console.log(`Line ${i} columns:`, columns);
+        
+        if (columns.length < 4) {
+          console.log(`Line ${i} has insufficient columns:`, columns.length);
+          continue;
+        }
 
         const [csvISIN, schemeName, navStr, date] = columns;
         
         if (csvISIN.trim().toUpperCase() === isin.trim().toUpperCase()) {
           const nav = parseFloat(navStr);
           if (isNaN(nav)) {
+            console.log(`Invalid NAV value for ISIN ${isin}:`, navStr);
             return { success: false, error: 'Invalid NAV value in data' };
           }
 
@@ -57,6 +77,8 @@ class NAVService {
             date: date.trim()
           };
 
+          console.log('Found matching data:', data);
+
           // Cache the result
           this.cache.set(isin, { data, timestamp: Date.now() });
           
@@ -64,6 +86,7 @@ class NAVService {
         }
       }
 
+      console.log(`ISIN ${isin} not found in NAV data`);
       return { success: false, error: 'ISIN not found in NAV data' };
     } catch (error) {
       console.error('Error fetching NAV data:', error);
