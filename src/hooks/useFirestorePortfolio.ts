@@ -6,6 +6,8 @@ import { getMutualFundService } from '../services/mutualFundApi';
 import { getBreezeService } from '../services/breezeApi';
 import { writeBatch, doc } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { navService } from '../services/navService';
+import { calculateFixedDepositValue } from '../utils/fixedDepositCalculations';
 
 interface UseFirestorePortfolioOptions {
   enableLazyLoading?: boolean;
@@ -69,6 +71,13 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     holdings?: () => void;
     buckets?: () => void;
   }>({});
+  
+  // Save notification state
+  const [saveNotification, setSaveNotification] = useState<{
+    show: boolean;
+    message: string;
+    type: 'success' | 'error' | 'loading';
+  }>({ show: false, message: '', type: 'success' });
   
   // Enhanced calculated data states
   const [calculatedHoldings, setCalculatedHoldings] = useState<Holding[]>([]);
@@ -316,8 +325,27 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       if (netQuantity > 0 && totalInvestedAmount > 0) {
         const averageBuyPrice = totalInvestedAmount / netQuantity;
         const cacheKey = `${name}-${data.investmentType}`;
-        const currentPrice = priceCache[cacheKey]?.price || averageBuyPrice;
-        const currentValue = netQuantity * currentPrice;
+        let currentPrice = priceCache[cacheKey]?.price || averageBuyPrice;
+        let currentValue = netQuantity * currentPrice;
+        
+        // Handle Fixed Deposit calculations
+        if (data.investmentType === 'fixed_deposit') {
+          // Get interest rate from the latest trade
+          const latestTrade = sortedTransactions
+            .filter(t => t.type === 'buy')
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+          
+          if (latestTrade && typeof latestTrade.price === 'number' && latestTrade.price > 0) {
+            const fdCalculation = calculateFixedDepositValue(
+              totalInvestedAmount,
+              latestTrade.price, // Using price field as interest rate
+              latestTrade.date
+            );
+            currentValue = fdCalculation.maturityValue;
+            currentPrice = currentValue / netQuantity; // Update price per unit
+          }
+        }
+        
         const gainLossAmount = currentValue - totalInvestedAmount;
         const gainLossPercent = totalInvestedAmount > 0 ? (gainLossAmount / totalInvestedAmount) * 100 : 0;
         
@@ -621,6 +649,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     };
     
     try {
+      setSaveNotification({ show: true, message: 'Saving trade...', type: 'loading' });
+      
       // Update local state immediately for better UX
       setTrades(prev => [...prev, newTrade]);
       
@@ -631,9 +661,12 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       setTrades(prev => prev.map(t => 
         t.id === newTrade.id ? { ...t, id: firebaseId } : t
       ));
+      
+      setSaveNotification({ show: true, message: 'Trade saved successfully!', type: 'success' });
     } catch (error) {
       // Remove the trade from local state if Firebase save failed
       setTrades(prev => prev.filter(t => t.id !== newTrade.id));
+      setSaveNotification({ show: true, message: 'Failed to save trade', type: 'error' });
       setError('Failed to add trade');
       throw error;
     }
@@ -657,6 +690,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         updatedTrade.buyAmount = newQuantity * newBuyRate;
       }
       
+      setSaveNotification({ show: true, message: 'Updating trade...', type: 'loading' });
+      
       // Update local state immediately for better UX
       setTrades(prev => prev.map(trade => 
         trade.id === id ? { ...trade, ...updatedTrade } : trade
@@ -664,6 +699,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       
       // Then save to Firebase
       await firestoreService.updateTrade(user.uid, id, updatedTrade);
+      
+      setSaveNotification({ show: true, message: 'Trade updated successfully!', type: 'success' });
     } catch (error) {
       // Rollback local state if Firebase save failed
       if (originalTrade) {
@@ -671,6 +708,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
           trade.id === id ? originalTrade : trade
         ));
       }
+      setSaveNotification({ show: true, message: 'Failed to update trade', type: 'error' });
       setError('Failed to update trade');
       throw error;
     }
@@ -683,16 +721,21 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       // Store original trade for rollback
       const originalTrade = trades.find(t => t.id === id);
       
+      setSaveNotification({ show: true, message: 'Deleting trade...', type: 'loading' });
+      
       // Update local state immediately for better UX
       setTrades(prev => prev.filter(trade => trade.id !== id));
       
       // Then delete from Firebase
       await firestoreService.deleteTrade(user.uid, id);
+      
+      setSaveNotification({ show: true, message: 'Trade deleted successfully!', type: 'success' });
     } catch (error) {
       // Rollback local state if Firebase delete failed
       if (originalTrade) {
         setTrades(prev => [...prev, originalTrade]);
       }
+      setSaveNotification({ show: true, message: 'Failed to delete trade', type: 'error' });
       setError('Failed to delete trade');
       throw error;
     }
@@ -894,6 +937,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     isLoadingPrices,
     filters,
     priceCache, // New: Expose price cache for debugging
+    saveNotification,
+    setSaveNotification,
     
     // Actions
     setFilters,

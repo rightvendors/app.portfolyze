@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Trade } from '../types/portfolio';
-import { Trash2, Plus, Download, Upload } from 'lucide-react';
+import { Trash2, Plus, Download, Upload, Loader } from 'lucide-react';
 import { getMutualFundService } from '../services/mutualFundApi';
+import { navService, MutualFundData } from '../services/navService';
 
 interface TradesTableProps {
   trades: Trade[];
@@ -20,6 +21,8 @@ const TradesTable: React.FC<TradesTableProps> = ({
   const [editValue, setEditValue] = useState<string>('');
   const [isinLookupResult, setIsinLookupResult] = useState<{ schemeName: string; nav: number } | null>(null);
   const [isinError, setIsinError] = useState<string>('');
+  const [isLoadingName, setIsLoadingName] = useState<{ [key: string]: boolean }>({});
+  const [navData, setNavData] = useState<{ [key: string]: MutualFundData }>({});
   const [columnWidths, setColumnWidths] = useState({
     date: 120,
     investmentType: 140,
@@ -71,6 +74,44 @@ const TradesTable: React.FC<TradesTableProps> = ({
     }
   };
 
+  // Enhanced ISIN lookup with NAV service
+  const lookupMutualFundByISINEnhanced = async (isin: string, tradeId: string) => {
+    if (isin.length < 12) {
+      setIsinLookupResult(null);
+      setIsinError('');
+      setIsLoadingName(prev => ({ ...prev, [tradeId]: false }));
+      return;
+    }
+
+    try {
+      setIsLoadingName(prev => ({ ...prev, [tradeId]: true }));
+      setIsinError('');
+      
+      const result = await navService.fetchNAVByISIN(isin);
+      
+      if (result.success && result.data) {
+        setNavData(prev => ({ ...prev, [tradeId]: result.data! }));
+        setIsinLookupResult({
+          schemeName: result.data.schemeName,
+          nav: result.data.nav
+        });
+        
+        // Auto-update the trade with fetched data
+        onUpdateTrade(tradeId, {
+          name: result.data.schemeName,
+          buyRate: result.data.nav
+        });
+      } else {
+        setIsinError(result.error || 'Failed to fetch mutual fund data');
+      }
+    } catch (error) {
+      setIsinError('Error fetching mutual fund data');
+      console.error('ISIN lookup error:', error);
+    } finally {
+      setIsLoadingName(prev => ({ ...prev, [tradeId]: false }));
+    }
+  };
+
   // Handle ISIN input change
   const handleIsinInputChange = (value: string, tradeId: string) => {
     const upperValue = value.toUpperCase();
@@ -78,7 +119,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
     
     // Auto-uppercase and lookup if 12 characters
     if (upperValue.length === 12) {
-      lookupMutualFundByISIN(upperValue, tradeId);
+      lookupMutualFundByISINEnhanced(upperValue, tradeId);
     } else {
       setIsinLookupResult(null);
       setIsinError('');
@@ -354,10 +395,34 @@ const TradesTable: React.FC<TradesTableProps> = ({
     }
     
     // Special handling for name field in mutual funds (read-only when ISIN is used)
-    if (field === 'name' && trade.investmentType === 'mutual_fund') {
+    if (field === 'name') {
+      const isLoading = isLoadingName[trade.id];
+      const isMutualFund = trade.investmentType === 'mutual_fund';
+      
       return (
-        <div className={`${readOnlyClass} min-h-8 py-1`} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
-          {value}
+        <div className="min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white hover:bg-blue-50 cursor-pointer flex items-center"
+             style={{ width: columnWidths[field], height: 'auto' }}
+             onClick={() => !isMutualFund && handleCellClick(trade.id, field, value)}>
+          {isLoading ? (
+            <div className="flex items-center gap-2">
+              <Loader className="w-3 h-3 animate-spin text-blue-500" />
+              <span className="text-gray-500">Fetching...</span>
+            </div>
+          ) : (
+            isEditing ? (
+              <input
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={handleCellSave}
+                onKeyDown={handleKeyPress}
+                className="w-full min-h-6 text-xs border-none outline-none bg-white"
+                autoFocus
+              />
+            ) : (
+              <span className={isMutualFund ? 'text-blue-600' : ''}>{value || ''}</span>
+            )
+          )}
         </div>
       );
     }
