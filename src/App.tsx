@@ -9,6 +9,7 @@ import TradesTable from './components/TradesTable';
 import CurrentHoldingsTable from './components/CurrentHoldingsTable';
 import InvestmentBucketsTable from './components/InvestmentBucketsTable';
 import FilterBar from './components/FilterBar';
+import SaveNotification from './components/SaveNotification';
 import { FileText, TrendingUp, Target } from 'lucide-react';
 
 function Dashboard() {
@@ -26,6 +27,8 @@ function Dashboard() {
     hasLoadedInitialData,
     error,
     isLoadingPrices,
+    saveNotification,
+    setSaveNotification,
     setFilters,
     addTrade,
     updateTrade,
@@ -191,6 +194,14 @@ function Dashboard() {
         </div>
 
         <Footer />
+        
+        {/* Save Notification */}
+        <SaveNotification
+          show={saveNotification.show}
+          message={saveNotification.message}
+          type={saveNotification.type}
+          onHide={() => setSaveNotification(prev => ({ ...prev, show: false }))}
+        />
       </div>
     </AuthGuard>
   );
