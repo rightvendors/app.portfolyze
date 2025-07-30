@@ -21,25 +21,75 @@ interface EnhancedFilterState extends FilterState {
   maxValue?: number;
 }
 
-// XIRR calculation utility
+// XIRR calculation utility using Newton-Raphson method
 const calculateXIRR = (cashFlows: { date: Date; amount: number }[]): number => {
   if (cashFlows.length < 2) return 0;
   
-  // Simple approximation using IRR formula
-  // For production, consider using a proper XIRR library like 'xirr' npm package
+  // Sort cash flows by date
   const sortedFlows = cashFlows.sort((a, b) => a.date.getTime() - b.date.getTime());
+  
+  // Convert dates to years from the first cash flow
   const firstDate = sortedFlows[0].date;
-  const lastDate = sortedFlows[sortedFlows.length - 1].date;
-  const years = (lastDate.getTime() - firstDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  const flows = sortedFlows.map(flow => ({
+    amount: flow.amount,
+    years: (flow.date.getTime() - firstDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+  }));
   
-  if (years <= 0) return 0;
+  // Newton-Raphson method to find XIRR
+  let rate = 0.1; // Initial guess: 10%
+  const maxIterations = 100;
+  const tolerance = 1e-6;
   
-  const totalInvested = sortedFlows.slice(0, -1).reduce((sum, flow) => sum + Math.abs(flow.amount), 0);
-  const finalValue = Math.abs(sortedFlows[sortedFlows.length - 1].amount);
+  for (let i = 0; i < maxIterations; i++) {
+    let npv = 0;
+    let derivative = 0;
+    
+    for (const flow of flows) {
+      const factor = Math.pow(1 + rate, -flow.years);
+      npv += flow.amount * factor;
+      derivative -= flow.amount * flow.years * factor / (1 + rate);
+    }
+    
+    if (Math.abs(npv) < tolerance) {
+      break;
+    }
+    
+    const newRate = rate - npv / derivative;
+    
+    // Prevent extreme values
+    if (newRate < -0.99 || newRate > 10) {
+      break;
+    }
+    
+    rate = newRate;
+  }
   
-  if (totalInvested <= 0) return 0;
+  // Convert to percentage and handle edge cases
+  const xirr = rate * 100;
   
-  return ((Math.pow(finalValue / totalInvested, 1 / years) - 1) * 100);
+  // Return reasonable bounds
+  if (isNaN(xirr) || !isFinite(xirr)) return 0;
+  if (xirr < -99) return -99;
+  if (xirr > 1000) return 1000;
+  
+  return xirr;
+};
+
+// Helper function to validate cash flows for debugging
+const validateCashFlows = (cashFlows: { date: Date; amount: number }[], holdingName: string) => {
+  const totalOutflows = cashFlows.filter(cf => cf.amount < 0).reduce((sum, cf) => sum + Math.abs(cf.amount), 0);
+  const totalInflows = cashFlows.filter(cf => cf.amount > 0).reduce((sum, cf) => sum + cf.amount, 0);
+  
+  console.log(`XIRR Debug for ${holdingName}:`, {
+    totalCashFlows: cashFlows.length,
+    totalOutflows: totalOutflows.toFixed(2),
+    totalInflows: totalInflows.toFixed(2),
+    netCashFlow: (totalInflows - totalOutflows).toFixed(2),
+    cashFlows: cashFlows.map(cf => ({
+      date: cf.date.toISOString().split('T')[0],
+      amount: cf.amount.toFixed(2)
+    }))
+  });
 };
 
 // Memoized price cache with better structure
@@ -292,8 +342,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         date: trade.date,
         type: trade.transactionType,
         quantity: trade.quantity,
-        price: trade.buyRate,
-        amount: trade.buyAmount,
+        price: trade.transactionType === 'buy' ? trade.buyRate : (trade.sellRate || trade.buyRate),
+        amount: trade.transactionType === 'buy' ? trade.buyAmount : (trade.sellAmount || trade.buyAmount),
         interestRate: trade.interestRate
       });
     });
@@ -309,8 +359,11 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       let netQuantity = 0;
       let totalInvestedAmount = 0;
       let remainingBuys: Array<{ quantity: number; price: number; date: string }> = [];
+      
+      // Build cash flows for XIRR calculation
       const cashFlows: { date: Date; amount: number }[] = [];
       
+      // Process all transactions to build cash flows
       sortedTransactions.forEach(transaction => {
         if (transaction.type === 'buy') {
           remainingBuys.push({
@@ -320,6 +373,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
           });
           netQuantity += transaction.quantity;
           totalInvestedAmount += transaction.amount;
+          // Buy transactions are negative cash flows (money going out)
           cashFlows.push({ date: new Date(transaction.date), amount: -transaction.amount });
         } else if (transaction.type === 'sell') {
           let sellQuantity = transaction.quantity;
@@ -339,7 +393,10 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
           }
           
           netQuantity -= transaction.quantity;
-          cashFlows.push({ date: new Date(transaction.date), amount: transaction.amount });
+          // Sell transactions are positive cash flows (money coming in)
+          // Use sellAmount if available, otherwise calculate from quantity and rate
+          const sellAmount = transaction.amount || (transaction.quantity * (transaction.price || 0));
+          cashFlows.push({ date: new Date(transaction.date), amount: sellAmount });
         }
       });
       
@@ -382,9 +439,14 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         const gainLossAmount = currentValue - totalInvestedAmount;
         const gainLossPercent = totalInvestedAmount > 0 ? (gainLossAmount / totalInvestedAmount) * 100 : 0;
         
-        // Enhanced XIRR calculation
+        // Calculate XIRR with proper cash flows
+        // Add current value as final positive cash flow (money coming in if sold today)
         const finalCashFlow = { date: new Date(), amount: currentValue };
         const allCashFlows = [...cashFlows, finalCashFlow];
+        
+        // Debug cash flows for validation (uncomment for debugging)
+        // validateCashFlows(allCashFlows, displayName);
+        
         const xirr = calculateXIRR(allCashFlows);
         
         // Improved annualized return calculation
