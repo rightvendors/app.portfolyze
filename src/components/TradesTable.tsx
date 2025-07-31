@@ -306,9 +306,16 @@ const TradesTable: React.FC<TradesTableProps> = ({
       value = editValue.toUpperCase();
     }
     
-    // Auto-populate name field when gold is selected
-    if (field === 'investmentType' && value === 'gold') {
-      onUpdateTrade(id, { [field]: value, name: '24 carat in gms' });
+    // Auto-populate name field when gold or silver is selected
+    if (field === 'investmentType') {
+      if (value === 'gold') {
+        onUpdateTrade(id, { [field]: value, name: '24 carats Gold in gms' });
+      } else if (value === 'silver') {
+        onUpdateTrade(id, { [field]: value, name: 'Silver in Kgs' });
+      } else {
+        // Clear name field when changing to other investment types
+        onUpdateTrade(id, { [field]: value, name: '' });
+      }
     } else {
       onUpdateTrade(id, { [field]: value });
     }
@@ -516,7 +523,20 @@ const TradesTable: React.FC<TradesTableProps> = ({
           <div className="min-h-8 px-1 py-1 border-r border-b border-gray-300 bg-white" style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
             <select
               value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                setEditValue(newValue);
+                
+                // Auto-populate name field immediately when gold or silver is selected
+                if (newValue === 'gold') {
+                  onUpdateTrade(editingCell.id, { investmentType: newValue, name: '24 carats Gold in gms' });
+                } else if (newValue === 'silver') {
+                  onUpdateTrade(editingCell.id, { investmentType: newValue, name: 'Silver in Kgs' });
+                } else {
+                  // Clear name field when changing to other investment types
+                  onUpdateTrade(editingCell.id, { investmentType: newValue, name: '' });
+                }
+              }}
               onBlur={handleCellSave}
               onKeyDown={handleKeyPress}
               className="w-full min-h-6 text-xs border-none outline-none bg-white"

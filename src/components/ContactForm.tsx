@@ -19,18 +19,35 @@ const ContactForm: React.FC<ContactFormProps> = ({ isOpen, onClose }) => {
     e.preventDefault();
     setIsSubmitting(true);
     
-    // Simulate form submission
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    setSubmitted(true);
-    setIsSubmitting(false);
-    
-    // Reset form after 2 seconds
-    setTimeout(() => {
-      setSubmitted(false);
-      setFormData({ name: '', email: '', message: '' });
-      onClose();
-    }, 2000);
+    try {
+      // Send email using EmailJS or similar service
+      // For now, we'll use a mailto link as a fallback
+      const subject = `Contact Form Message from ${formData.name}`;
+      const body = `Name: ${formData.name}\nEmail: ${formData.email}\n\nMessage:\n${formData.message}`;
+      
+      // Create mailto link
+      const mailtoLink = `mailto:ravisankarpeela@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      
+      // Open default email client
+      window.open(mailtoLink, '_blank');
+      
+      // Simulate successful submission
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setSubmitted(true);
+      setIsSubmitting(false);
+      
+      // Reset form after 3 seconds
+      setTimeout(() => {
+        setSubmitted(false);
+        setFormData({ name: '', email: '', message: '' });
+        onClose();
+      }, 3000);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setIsSubmitting(false);
+      // You can add error handling here
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -57,7 +74,8 @@ const ContactForm: React.FC<ContactFormProps> = ({ isOpen, onClose }) => {
         {submitted ? (
           <div className="text-center py-8">
             <div className="text-green-600 text-4xl mb-4">✓</div>
-            <p className="text-gray-700">Thank you for your message! We'll get back to you soon.</p>
+            <p className="text-gray-700 mb-2">Thank you for your message!</p>
+            <p className="text-sm text-gray-600">Your email client should open with a pre-filled message to ravisankarpeela@gmail.com</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">

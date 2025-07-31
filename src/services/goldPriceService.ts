@@ -1,88 +1,118 @@
-export interface GoldPriceData {
-  city: string;
+export interface GoldSilverPriceData {
   gold_24k: number;
-  gold_22k: number;
-  gold_18k: number;
+  silver_per_kg: number;
   timestamp: string;
 }
 
-export interface GoldPriceResponse {
-  success: boolean;
-  data?: GoldPriceData;
-  error?: string;
-}
+class GoldSilverPriceService {
+  private readonly CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSR2oIq7FfNcvUMPhugPZd8f3dUQHSHAT879W0OfpYcHQZZ-aY696QUGk4JmYu8fyt8yDAeEJ001c7y/pub?gid=0&single=true&output=csv';
+  private priceCache: { gold: number; silver: number; timestamp: number } | null = null;
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-class GoldPriceService {
-  private readonly API_KEY = '49d8557f59msh20345ca4ff94ed7p1d0d00jsn0c3a24c251e5';
-  private readonly API_HOST = 'indian-gold-and-silver-price.p.rapidapi.com';
-  private priceCache: { price: number; timestamp: number } | null = null;
-  private readonly CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
-
-  async getCurrentGoldPrice(city: string = 'Mumbai'): Promise<number | null> {
+  async fetchPrices(): Promise<GoldSilverPriceData | null> {
     try {
       // Check cache first
       if (this.priceCache && Date.now() - this.priceCache.timestamp < this.CACHE_DURATION) {
-        return this.priceCache.price;
+        console.log('Using cached gold/silver prices:', this.priceCache);
+        return {
+          gold_24k: this.priceCache.gold,
+          silver_per_kg: this.priceCache.silver,
+          timestamp: new Date(this.priceCache.timestamp).toISOString()
+        };
       }
 
-      const response = await fetch(`https://${this.API_HOST}/gold?city=${city}`, {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': this.API_KEY,
-          'x-rapidapi-host': this.API_HOST,
-        },
-      });
-
+      console.log('Fetching gold/silver prices from CSV...');
+      const response = await fetch(this.CSV_URL);
+      
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data: GoldPriceResponse = await response.json();
+      const csvText = await response.text();
+      console.log('CSV response:', csvText);
       
-      if (data.success && data.data) {
-        const price = data.data.gold_24k; // Use 24k gold price per gram
+      const prices = this.parseCSV(csvText);
+      console.log('Parsed prices:', prices);
+      
+      if (prices) {
         this.priceCache = {
-          price,
+          gold: prices.gold_24k,
+          silver: prices.silver_per_kg,
           timestamp: Date.now()
         };
-        return price;
-      } else {
-        throw new Error(data.error || 'Failed to fetch gold price');
+        return prices;
       }
+      
+      return null;
     } catch (error) {
-      console.error('Error fetching gold price:', error);
+      console.error('Error fetching gold/silver prices:', error);
       return null;
     }
   }
 
-  async getGoldPriceData(city: string = 'Mumbai'): Promise<GoldPriceData | null> {
+  private parseCSV(csvText: string): GoldSilverPriceData | null {
     try {
-      const response = await fetch(`https://${this.API_HOST}/gold?city=${city}`, {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': this.API_KEY,
-          'x-rapidapi-host': this.API_HOST,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: GoldPriceResponse = await response.json();
+      console.log('Raw CSV text:', csvText);
       
-      if (data.success && data.data) {
-        return data.data;
-      } else {
-        throw new Error(data.error || 'Failed to fetch gold price data');
+      // Handle the specific format: "24 carat Gold price per gm,"9,930" Silver rate per kg," 111,450.00""
+      // This is a single line with quoted values
+      
+      let goldPrice = 0;
+      let silverPrice = 0;
+      
+      // Extract gold price - look for pattern: "9,930"
+      const goldMatch = csvText.match(/"([0-9,]+)"/);
+      if (goldMatch) {
+        goldPrice = parseFloat(goldMatch[1].replace(/,/g, ''));
+        console.log('Gold price extracted:', goldPrice);
       }
+      
+      // Extract silver price - look for pattern: " 111,450.00"
+      const silverMatch = csvText.match(/"\s*([0-9,]+\.?[0-9]*)"/g);
+      if (silverMatch && silverMatch.length > 1) {
+        // Take the second quoted value (silver price)
+        const silverValue = silverMatch[1].replace(/"/g, '').trim();
+        silverPrice = parseFloat(silverValue.replace(/,/g, ''));
+        console.log('Silver price extracted:', silverPrice);
+      }
+      
+      console.log('Final extracted prices - Gold:', goldPrice, 'Silver:', silverPrice);
+
+      if (goldPrice > 0 || silverPrice > 0) {
+        return {
+          gold_24k: goldPrice,
+          silver_per_kg: silverPrice,
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      return null;
     } catch (error) {
-      console.error('Error fetching gold price data:', error);
+      console.error('Error parsing CSV:', error);
       return null;
     }
+  }
+
+  async getCurrentGoldPrice(): Promise<number | null> {
+    const prices = await this.fetchPrices();
+    return prices?.gold_24k || null;
+  }
+
+  async getCurrentSilverPrice(): Promise<number | null> {
+    const prices = await this.fetchPrices();
+    return prices?.silver_per_kg || null;
+  }
+
+  async getCurrentPrices(): Promise<{ gold: number | null; silver: number | null }> {
+    const prices = await this.fetchPrices();
+    return {
+      gold: prices?.gold_24k || null,
+      silver: prices?.silver_per_kg || null
+    };
   }
 
   clearCache(): void {
+    console.log('Clearing gold/silver price cache');
     this.priceCache = null;
   }
 
@@ -94,11 +124,11 @@ class GoldPriceService {
   }
 }
 
-let goldPriceService: GoldPriceService | null = null;
+let goldSilverPriceService: GoldSilverPriceService | null = null;
 
-export const getGoldPriceService = (): GoldPriceService => {
-  if (!goldPriceService) {
-    goldPriceService = new GoldPriceService();
+export const getGoldSilverPriceService = (): GoldSilverPriceService => {
+  if (!goldSilverPriceService) {
+    goldSilverPriceService = new GoldSilverPriceService();
   }
-  return goldPriceService;
+  return goldSilverPriceService;
 }; 

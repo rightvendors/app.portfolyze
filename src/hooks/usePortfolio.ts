@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Trade, Summary, FilterState, Holding } from '../types/portfolio';
 import { getMutualFundService } from '../services/mutualFundApi';
 import { getStockPriceService } from '../services/stockPriceService';
-import { getGoldPriceService } from '../services/goldPriceService';
+import { getGoldSilverPriceService } from '../services/goldPriceService';
 
 // Local storage keys
 const STORAGE_KEYS = {
@@ -285,25 +285,41 @@ export const usePortfolio = () => {
         }
       }
       
-      // Try Gold Price Service for gold
-      if (type === 'gold') {
-        const goldService = getGoldPriceService();
+      // Try Gold/Silver Price Service for gold and silver
+      if (type === 'gold' || type === 'silver') {
+        const goldSilverService = getGoldSilverPriceService();
         try {
-          const realGoldPrice = await goldService.getCurrentGoldPrice();
-          if (realGoldPrice !== null && realGoldPrice > 0) {
-            // Cache the real gold price
-            setPriceCache(prev => {
-              const updatedCache = {
-                ...prev,
-                [cacheKey]: { price: realGoldPrice, timestamp: now }
-              };
-              saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
-              return updatedCache;
-            });
-            return realGoldPrice;
+          if (type === 'gold') {
+            const realGoldPrice = await goldSilverService.getCurrentGoldPrice();
+            if (realGoldPrice !== null && realGoldPrice > 0) {
+              // Cache the real gold price
+              setPriceCache(prev => {
+                const updatedCache = {
+                  ...prev,
+                  [cacheKey]: { price: realGoldPrice, timestamp: now }
+                };
+                saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
+                return updatedCache;
+              });
+              return realGoldPrice;
+            }
+          } else if (type === 'silver') {
+            const realSilverPrice = await goldSilverService.getCurrentSilverPrice();
+            if (realSilverPrice !== null && realSilverPrice > 0) {
+              // Cache the real silver price
+              setPriceCache(prev => {
+                const updatedCache = {
+                  ...prev,
+                  [cacheKey]: { price: realSilverPrice, timestamp: now }
+                };
+                saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
+                return updatedCache;
+              });
+              return realSilverPrice;
+            }
           }
         } catch (error) {
-          console.warn(`Gold Price Service failed for ${symbol}, using mock data:`, error);
+          console.warn(`${type === 'gold' ? 'Gold' : 'Silver'} Price Service failed for ${symbol}, using mock data:`, error);
         }
       }
       
@@ -369,8 +385,8 @@ export const usePortfolio = () => {
         // Mock mutual fund NAV prices
         price = Math.random() * 500 + 50;
       } else if (type === 'gold') {
-        // Mock gold price per gram
-        price = 5850.00 + (Math.random() - 0.5) * 200;
+        // Mock gold price per gram (updated to current market rate)
+        price = 10000.00 + (Math.random() - 0.5) * 500;
       } else if (type === 'silver') {
         // Mock silver price per gram
         price = 72.50 + (Math.random() - 0.5) * 5;
@@ -395,8 +411,23 @@ export const usePortfolio = () => {
       return price;
     } catch (error) {
       console.error(`Error fetching price for ${symbol}:`, error);
-      // Return cached price if available, otherwise a default
-      return priceCache[cacheKey]?.price || 100;
+      // Return cached price if available, otherwise use appropriate mock data
+      if (priceCache[cacheKey]?.price) {
+        return priceCache[cacheKey].price;
+      }
+      
+      // Use appropriate mock data based on investment type
+      if (type === 'gold') {
+        return 10000.00 + (Math.random() - 0.5) * 500; // Mock gold price
+      } else if (type === 'silver') {
+        return 72.50 + (Math.random() - 0.5) * 5; // Mock silver price
+      } else if (type === 'stock') {
+        return Math.random() * 1000 + 100; // Mock stock price
+      } else if (type === 'mutual_fund') {
+        return Math.random() * 500 + 50; // Mock mutual fund NAV
+      } else {
+        return Math.random() * 1000 + 100; // Default mock price
+      }
     }
   };
 

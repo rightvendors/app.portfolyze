@@ -4,7 +4,7 @@ import { firestoreService } from '../services/firestoreService';
 import { useFirebaseAuth } from './useFirebaseAuth';
 import { getMutualFundService } from '../services/mutualFundApi';
 import { getStockPriceService } from '../services/stockPriceService';
-import { getGoldPriceService } from '../services/goldPriceService';
+import { getGoldSilverPriceService } from '../services/goldPriceService';
 import { writeBatch, doc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { navService } from '../services/navService';
@@ -206,10 +206,14 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         price = await stockService.getCurrentPrice(symbol);
       }
       
-      // Try Gold Price Service for gold
-      if (!price && type === 'gold') {
-        const goldService = getGoldPriceService();
-        price = await goldService.getCurrentGoldPrice();
+      // Try Gold/Silver Price Service for gold and silver
+      if (!price && (type === 'gold' || type === 'silver')) {
+        const goldSilverService = getGoldSilverPriceService();
+        if (type === 'gold') {
+          price = await goldSilverService.getCurrentGoldPrice();
+        } else if (type === 'silver') {
+          price = await goldSilverService.getCurrentSilverPrice();
+        }
       }
       
       // Try Mutual Fund API for mutual funds
@@ -245,7 +249,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       
       // No price found, increment retry count
       const retryCount = (cacheEntry?.retryCount || 0) + 1;
-      const fallbackPrice = cacheEntry?.price || 100;
+      const fallbackPrice = cacheEntry?.price || getMockPrice(type);
       
       setPriceCache(prev => ({
         ...prev,
@@ -262,7 +266,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       console.error(`Error fetching price for ${symbol}:`, error);
       
       const retryCount = (cacheEntry?.retryCount || 0) + 1;
-      const fallbackPrice = cacheEntry?.price || 100;
+      const fallbackPrice = cacheEntry?.price || getMockPrice(type);
       
       setPriceCache(prev => ({
         ...prev,
@@ -277,6 +281,25 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       return fallbackPrice;
     }
   }, [priceCache]);
+
+  // Helper function to get appropriate mock prices
+  const getMockPrice = (type: string): number => {
+    switch (type) {
+      case 'gold':
+        return 10000.00 + (Math.random() - 0.5) * 500; // Mock gold price
+      case 'silver':
+        return 72.50 + (Math.random() - 0.5) * 5; // Mock silver price
+      case 'stock':
+        return Math.random() * 1000 + 100; // Mock stock price
+      case 'mutual_fund':
+        return Math.random() * 500 + 50; // Mock mutual fund NAV
+      case 'etf':
+      case 'nps':
+        return Math.random() * 200 + 50; // Mock ETF/NPS price
+      default:
+        return Math.random() * 1000 + 100; // Default mock price
+    }
+  };
 
   // Optimized trades loading with better error handling
   const loadTrades = useCallback(async (userId: string) => {
@@ -297,7 +320,18 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       
       const unsubscribe = firestoreService.subscribeToUserTrades(userId, (newTrades) => {
         clearTimeout(timeoutId);
-        setTrades(newTrades);
+        
+        // Ensure we're getting the latest data and handle deletions properly
+        setTrades(prevTrades => {
+          // If newTrades is shorter than prevTrades, it means trades were deleted
+          if (newTrades.length < prevTrades.length) {
+            console.log(`Trades deleted: ${prevTrades.length} -> ${newTrades.length}`);
+          }
+          
+          // Always use the new data from Firestore
+          return newTrades;
+        });
+        
         setLoadingStates(prev => ({ ...prev, trades: false }));
         setError(null);
       });
@@ -834,8 +868,25 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       // Update local state immediately for better UX
       setTrades(prev => prev.filter(trade => trade.id !== id));
       
+      // Clear any cached data for this trade
+      const tradeToDelete = originalTrade;
+      if (tradeToDelete) {
+        const cacheKey = `${tradeToDelete.name}-${tradeToDelete.investmentType}`;
+        setPriceCache(prev => {
+          const newCache = { ...prev };
+          delete newCache[cacheKey];
+          return newCache;
+        });
+      }
+      
       // Then delete from Firebase
       await firestoreService.deleteTrade(user.uid, id);
+      
+      // Force refresh of holdings calculation
+      setCalculatedHoldings(prev => {
+        const newHoldings = calculateCurrentHoldings();
+        return newHoldings;
+      });
       
       setSaveNotification({ show: true, message: 'Trade deleted successfully!', type: 'success' });
     } catch (error) {
@@ -1042,6 +1093,35 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     }));
     console.log(`Updated price cache for ${isin} with NAV: ${nav}`);
   }, []);
+
+  // Auto-refresh holdings when trades change
+  useEffect(() => {
+    if (trades.length > 0 && hasLoadedInitialData) {
+      // Debounce the price update to avoid excessive API calls
+      const timeoutId = setTimeout(() => {
+        updateAllPrices();
+      }, 1000); // 1 second delay
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [trades.length, hasLoadedInitialData]); // Only trigger on trades count change
+
+  // Auto-refresh when trades are modified (add/update/delete)
+  useEffect(() => {
+    if (trades.length > 0 && hasLoadedInitialData) {
+      // Create a hash of trades to detect changes
+      const tradesHash = trades.map(t => `${t.id}-${t.name}-${t.quantity}-${t.buyRate}`).join('|');
+      
+      const timeoutId = setTimeout(() => {
+        // Only update if we have trades and they've changed
+        if (trades.length > 0) {
+          updateAllPrices();
+        }
+      }, 1500); // 1.5 second delay for modifications
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [trades, hasLoadedInitialData]); // Trigger on any trade changes
 
   // Enhanced return object with new features
   return {

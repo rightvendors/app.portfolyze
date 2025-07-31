@@ -95,6 +95,20 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
     return `${percent >= 0 ? '+' : ''}${percent.toFixed(2)}%`;
   };
 
+  // Function to determine if a price is live (fetched from external sources)
+  const isLivePrice = (holding: Holding): boolean => {
+    // For mutual funds, check if there's any difference (even small) from buy price
+    // For other investments, check if the current price is significantly different
+    const priceDifference = Math.abs(holding.currentPrice - holding.averageBuyPrice);
+    const priceRatio = priceDifference / holding.averageBuyPrice;
+    
+    // For mutual funds: any difference indicates live price
+    // For others: more than 1% difference indicates live price
+    const threshold = holding.name.toLowerCase().includes('fund') ? 0.001 : 0.01;
+    
+    return priceRatio > threshold && holding.currentPrice !== holding.averageBuyPrice;
+  };
+
   const renderHeaderCell = (label: string, field: string) => (
     <div 
       className="relative h-10 px-3 text-xs font-semibold text-gray-700 bg-gray-100 border-r border-gray-300 flex items-center"
@@ -256,8 +270,9 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
               </div>
               
               {/* Current Price */}
-              <div className="min-h-10 px-3 py-2 text-xs border-r border-gray-300 bg-white flex items-center justify-end"
-                   style={{ width: columnWidths.currentPrice, height: 'auto' }}>
+              <div className={`min-h-10 px-3 py-2 text-xs border-r border-gray-300 bg-white flex items-center justify-end ${
+                isLivePrice(holding) ? 'text-blue-600 font-medium' : ''
+              }`} style={{ width: columnWidths.currentPrice, height: 'auto' }}>
                 {formatCurrency(holding.currentPrice)}
               </div>
               

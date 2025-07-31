@@ -29,7 +29,7 @@ const Header: React.FC<HeaderProps> = ({
         <div className="flex justify-between items-center py-4">
           <div className="flex items-center space-x-2">
             <a href="https://www.portfolyze.com" className="flex items-center space-x-2">
-              <LazyImage src="/Original on transparent copy.png" alt="Portfolyze Logo" className="h-8" />
+              <LazyImage src="/Original on transparent.png" alt="Portfolyze Logo" className="h-8" />
             </a>
           </div>
           
