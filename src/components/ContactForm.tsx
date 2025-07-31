@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { X, Send } from 'lucide-react';
+import emailjs from '@emailjs/browser';
+import { EMAILJS_CONFIG, EmailTemplateParams } from '../config/emailjs';
 
 interface ContactFormProps {
   isOpen: boolean;
@@ -20,20 +22,29 @@ const ContactForm: React.FC<ContactFormProps> = ({ isOpen, onClose }) => {
     setIsSubmitting(true);
     
     try {
-      // Send email using EmailJS or similar service
-      // For now, we'll use a mailto link as a fallback
-      const subject = `Contact Form Message from ${formData.name}`;
-      const body = `Name: ${formData.name}\nEmail: ${formData.email}\n\nMessage:\n${formData.message}`;
+      // Check if EmailJS is properly configured
+      if (EMAILJS_CONFIG.PUBLIC_KEY === 'YOUR_PUBLIC_KEY') {
+        throw new Error('EmailJS not configured. Please update the configuration.');
+      }
       
-      // Create mailto link
-      const mailtoLink = `mailto:ravisankarpeela@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      // Prepare template parameters
+      const templateParams: EmailTemplateParams = {
+        to_email: EMAILJS_CONFIG.TO_EMAIL,
+        from_name: formData.name,
+        from_email: formData.email,
+        message: formData.message,
+        subject: `Contact Form Message from ${formData.name}`
+      };
       
-      // Open default email client
-      window.open(mailtoLink, '_blank');
+      // Send email using EmailJS
+      const result = await emailjs.send(
+        EMAILJS_CONFIG.SERVICE_ID, 
+        EMAILJS_CONFIG.TEMPLATE_ID, 
+        templateParams, 
+        EMAILJS_CONFIG.PUBLIC_KEY
+      );
       
-      // Simulate successful submission
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      console.log('Email sent successfully:', result);
       setSubmitted(true);
       setIsSubmitting(false);
       
@@ -46,7 +57,24 @@ const ContactForm: React.FC<ContactFormProps> = ({ isOpen, onClose }) => {
     } catch (error) {
       console.error('Error sending message:', error);
       setIsSubmitting(false);
-      // You can add error handling here
+      
+      // Fallback to mailto link if EmailJS fails
+      try {
+        const subject = `Contact Form Message from ${formData.name}`;
+        const body = `Name: ${formData.name}\nEmail: ${formData.email}\n\nMessage:\n${formData.message}`;
+        const mailtoLink = `mailto:ravisankarpeela@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.open(mailtoLink, '_blank');
+        
+        setSubmitted(true);
+        setTimeout(() => {
+          setSubmitted(false);
+          setFormData({ name: '', email: '', message: '' });
+          onClose();
+        }, 3000);
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+        alert('Failed to send message. Please try again or contact us directly at ravisankarpeela@gmail.com');
+      }
     }
   };
 
@@ -75,7 +103,8 @@ const ContactForm: React.FC<ContactFormProps> = ({ isOpen, onClose }) => {
           <div className="text-center py-8">
             <div className="text-green-600 text-4xl mb-4">✓</div>
             <p className="text-gray-700 mb-2">Thank you for your message!</p>
-            <p className="text-sm text-gray-600">Your email client should open with a pre-filled message to ravisankarpeela@gmail.com</p>
+            <p className="text-sm text-gray-600">Your message has been sent to ravisankarpeela@gmail.com</p>
+            <p className="text-xs text-gray-500 mt-2">We'll get back to you soon!</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
