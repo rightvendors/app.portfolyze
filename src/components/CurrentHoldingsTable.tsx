@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { Holding } from '../types/portfolio';
 import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
-import BreezeAuth from './BreezeAuth';
+import { getStockPriceService } from '../services/stockPriceService';
 
 interface CurrentHoldingsTableProps {
   holdings: Holding[];
@@ -100,20 +100,13 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
 
   return (
     <div className="p-4 bg-white">
-      {/* Breeze Authentication */}
-      <BreezeAuth onAuthSuccess={() => {
-        // Optionally refresh prices after successful auth
-        if (onRefreshPrices) {
-          onRefreshPrices();
-        }
-      }} />
-      
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xs font-semibold text-gray-800">Current Holdings</h2>
         <div className="flex items-center gap-3">
           <div className="text-xs text-gray-600">
             {holdings.length} holdings
           </div>
+          
           {onRefreshPrices && (
             <button
               onClick={onRefreshPrices}
@@ -158,6 +151,8 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
             </span>
           </div>
         </div>
+        
+
       </div>
 
       {/* Excel-like Table */}

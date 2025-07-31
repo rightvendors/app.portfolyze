@@ -2,7 +2,9 @@ import React, { useState, useRef } from 'react';
 import { Trade } from '../types/portfolio';
 import { Trash2, Plus, Download, Upload, Loader } from 'lucide-react';
 import { getMutualFundService } from '../services/mutualFundApi';
+import { getStockPriceService } from '../services/stockPriceService';
 import { navService, MutualFundData } from '../services/navService';
+import StockSuggestionDropdown from './StockSuggestionDropdown';
 
 interface TradesTableProps {
   trades: Trade[];
@@ -25,6 +27,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   const [isinError, setIsinError] = useState<string>('');
   const [isLoadingName, setIsLoadingName] = useState<{ [key: string]: boolean }>({});
   const [navData, setNavData] = useState<{ [key: string]: MutualFundData }>({});
+  const [stockSuggestions, setStockSuggestions] = useState<{ [key: string]: { query: string; isVisible: boolean } }>({});
   const [columnWidths, setColumnWidths] = useState({
     date: 120,
     investmentType: 140,
@@ -74,6 +77,43 @@ const TradesTable: React.FC<TradesTableProps> = ({
       setIsinLookupResult(null);
       setIsinError('Error looking up ISIN. Please try again.');
     }
+  };
+
+  // Handle stock name input for suggestions
+  const handleStockNameInput = (value: string, tradeId: string) => {
+    const trade = trades.find(t => t.id === tradeId);
+    if (!trade || trade.investmentType !== 'stock') {
+      return;
+    }
+
+    if (value.length >= 2) {
+      setStockSuggestions(prev => ({
+        ...prev,
+        [tradeId]: { query: value, isVisible: true }
+      }));
+    } else {
+      setStockSuggestions(prev => ({
+        ...prev,
+        [tradeId]: { query: '', isVisible: false }
+      }));
+    }
+  };
+
+  // Handle stock suggestion selection
+  const handleStockSuggestionSelect = (tradeId: string, suggestion: any) => {
+    onUpdateTrade(tradeId, { name: suggestion.symbol });
+    setStockSuggestions(prev => ({
+      ...prev,
+      [tradeId]: { query: '', isVisible: false }
+    }));
+  };
+
+  // Close stock suggestions
+  const closeStockSuggestions = (tradeId: string) => {
+    setStockSuggestions(prev => ({
+      ...prev,
+      [tradeId]: { query: '', isVisible: false }
+    }));
   };
 
   // Enhanced ISIN lookup with NAV service
@@ -412,13 +452,15 @@ const TradesTable: React.FC<TradesTableProps> = ({
       );
     }
     
-    // Special handling for name field in mutual funds (read-only when ISIN is used)
+    // Special handling for name field
     if (field === 'name') {
       const isLoading = isLoadingName[trade.id];
       const isMutualFund = trade.investmentType === 'mutual_fund';
+      const isStock = trade.investmentType === 'stock';
+      const suggestionData = stockSuggestions[trade.id];
       
       return (
-        <div className="min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white hover:bg-blue-50 cursor-pointer flex items-center"
+        <div className="relative min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white hover:bg-blue-50 cursor-pointer flex items-center"
              style={{ width: columnWidths[field], height: 'auto' }}
              onClick={() => !isMutualFund && handleCellClick(trade.id, field, value)}>
           {isLoading ? (
@@ -428,15 +470,32 @@ const TradesTable: React.FC<TradesTableProps> = ({
             </div>
           ) : (
             isEditing ? (
-              <input
-                type="text"
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onBlur={handleCellSave}
-                onKeyDown={handleKeyPress}
-                className="w-full min-h-6 text-xs border-none outline-none bg-white"
-                autoFocus
-              />
+              <div className="relative w-full">
+                <input
+                  type="text"
+                  value={editValue}
+                  onChange={(e) => {
+                    setEditValue(e.target.value);
+                    if (isStock) {
+                      handleStockNameInput(e.target.value, trade.id);
+                    }
+                  }}
+                  onBlur={handleCellSave}
+                  onKeyDown={handleKeyPress}
+                  className="w-full min-h-6 text-xs border-none outline-none bg-white"
+                  autoFocus
+                />
+                
+                {/* Stock suggestions dropdown */}
+                {isStock && suggestionData && (
+                  <StockSuggestionDropdown
+                    query={suggestionData.query}
+                    isVisible={suggestionData.isVisible}
+                    onSelect={(suggestion) => handleStockSuggestionSelect(trade.id, suggestion)}
+                    onClose={() => closeStockSuggestions(trade.id)}
+                  />
+                )}
+              </div>
             ) : (
               <span className={isMutualFund ? 'text-blue-600' : ''}>{value || ''}</span>
             )

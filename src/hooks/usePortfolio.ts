@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Trade, Summary, FilterState, Holding } from '../types/portfolio';
 import { getMutualFundService } from '../services/mutualFundApi';
-import { getBreezeService } from '../services/breezeApi';
+import { getStockPriceService } from '../services/stockPriceService';
 
 // Local storage keys
 const STORAGE_KEYS = {
@@ -59,7 +59,7 @@ export const usePortfolio = () => {
         quantity: 30,
         buyRate: 3500.00,
         buyAmount: 105000,
-        brokerBank: 'Upstox',
+        brokerBank: 'Zerodha',
         bucketAllocation: 'bucket1b'
       },
       {
@@ -240,29 +240,25 @@ export const usePortfolio = () => {
     }
     
     try {
-      // Try Breeze API for stocks first
+      // Try Stock Price Service for stocks first
       if (type === 'stock') {
-        const breezeService = getBreezeService();
-        if (breezeService.isAuthenticated()) {
-          try {
-            const realPrice = await breezeService.getCurrentPrice(symbol);
-            if (realPrice !== null && realPrice > 0) {
-              // Cache the real price
-              setPriceCache(prev => {
-                const updatedCache = {
-                  ...prev,
-                  [cacheKey]: { price: realPrice, timestamp: now }
-                };
-                saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
-                return updatedCache;
-              });
-              return realPrice;
-            }
-          } catch (error) {
-            console.warn(`Breeze API failed for ${symbol}, using mock data:`, error);
+        const stockService = getStockPriceService();
+        try {
+          const realPrice = await stockService.getCurrentPrice(symbol);
+          if (realPrice !== null && realPrice > 0) {
+            // Cache the real price
+            setPriceCache(prev => {
+              const updatedCache = {
+                ...prev,
+                [cacheKey]: { price: realPrice, timestamp: now }
+              };
+              saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
+              return updatedCache;
+            });
+            return realPrice;
           }
-        } else {
-          console.log('Breeze API not authenticated, using mock data for stocks');
+        } catch (error) {
+          console.warn(`Stock Price Service failed for ${symbol}, using mock data:`, error);
         }
       }
       
@@ -294,7 +290,7 @@ export const usePortfolio = () => {
       let price: number;
       
       if (type === 'stock') {
-        // Mock stock prices - Upstox LTP not available in sandbox
+        // Mock stock prices - fallback when CSV service is unavailable
         const stockPrices: { [key: string]: number } = {
           'RELIANCE': 2450.50 + (Math.random() - 0.5) * 100,
           'TCS': 3650.75 + (Math.random() - 0.5) * 150,
@@ -386,7 +382,7 @@ export const usePortfolio = () => {
     setIsLoadingPrices(true);
     
     try {
-      const breezeService = getBreezeService();
+      const stockService = getStockPriceService();
       const mutualFundService = getMutualFundService();
       
       const uniqueInvestments = new Map<string, string>();
@@ -398,30 +394,31 @@ export const usePortfolio = () => {
         }
       });
       
-      // Use Breeze API for stocks if authenticated
+      // Use Stock Price Service for stocks
       const stockInvestments = Array.from(uniqueInvestments.entries())
         .filter(([name, type]) => type === 'stock');
       
-      if (stockInvestments.length > 0 && breezeService.isAuthenticated()) {
+      if (stockInvestments.length > 0) {
         try {
-          const stockQuotes = await breezeService.getMultipleQuotes(
-            stockInvestments.map(([symbol]) => ({ code: symbol, exchange: 'NSE' }))
-          );
+          const stockSymbols = stockInvestments.map(([symbol]) => symbol);
+          const stockPrices = await stockService.getMultiplePrices(stockSymbols);
           
           // Update cache with real stock prices
-          Object.entries(stockQuotes).forEach(([symbol, quote]) => {
-            const cacheKey = `${symbol}-stock`;
-            setPriceCache(prev => {
-              const updatedCache = {
-                ...prev,
-                [cacheKey]: { price: quote.ltp, timestamp: Date.now() }
-              };
-              saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
-              return updatedCache;
-            });
+          Object.entries(stockPrices).forEach(([symbol, price]) => {
+            if (price !== null) {
+              const cacheKey = `${symbol}-stock`;
+              setPriceCache(prev => {
+                const updatedCache = {
+                  ...prev,
+                  [cacheKey]: { price: price, timestamp: Date.now() }
+                };
+                saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
+                return updatedCache;
+              });
+            }
           });
         } catch (error) {
-          console.warn('Error fetching stock prices from Breeze API, using mock data:', error);
+          console.warn('Error fetching stock prices from CSV service, using mock data:', error);
         }
       }
       

@@ -3,7 +3,7 @@ import { Trade, Holding, BucketSummary, FilterState } from '../types/portfolio';
 import { firestoreService } from '../services/firestoreService';
 import { useFirebaseAuth } from './useFirebaseAuth';
 import { getMutualFundService } from '../services/mutualFundApi';
-import { getBreezeService } from '../services/breezeApi';
+import { getStockPriceService } from '../services/stockPriceService';
 import { writeBatch, doc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { navService } from '../services/navService';
@@ -199,12 +199,10 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     try {
       let price: number | null = null;
       
-      // Try Breeze API for stocks
+      // Try Stock Price Service for stocks
       if (type === 'stock') {
-        const breezeService = getBreezeService();
-        if (breezeService.isAuthenticated()) {
-          price = await breezeService.getCurrentPrice(symbol);
-        }
+        const stockService = getStockPriceService();
+        price = await stockService.getCurrentPrice(symbol);
       }
       
       // Try Mutual Fund API for mutual funds
