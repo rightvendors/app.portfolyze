@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Trade, Summary, FilterState, Holding } from '../types/portfolio';
 import { getMutualFundService } from '../services/mutualFundApi';
 import { getStockPriceService } from '../services/stockPriceService';
+import { getGoldPriceService } from '../services/goldPriceService';
 
 // Local storage keys
 const STORAGE_KEYS = {
@@ -281,6 +282,28 @@ export const usePortfolio = () => {
           }
         } catch (error) {
           console.warn(`Mutual Fund API failed for ${symbol}, using mock data:`, error);
+        }
+      }
+      
+      // Try Gold Price Service for gold
+      if (type === 'gold') {
+        const goldService = getGoldPriceService();
+        try {
+          const realGoldPrice = await goldService.getCurrentGoldPrice();
+          if (realGoldPrice !== null && realGoldPrice > 0) {
+            // Cache the real gold price
+            setPriceCache(prev => {
+              const updatedCache = {
+                ...prev,
+                [cacheKey]: { price: realGoldPrice, timestamp: now }
+              };
+              saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
+              return updatedCache;
+            });
+            return realGoldPrice;
+          }
+        } catch (error) {
+          console.warn(`Gold Price Service failed for ${symbol}, using mock data:`, error);
         }
       }
       

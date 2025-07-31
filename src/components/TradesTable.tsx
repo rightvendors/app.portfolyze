@@ -306,7 +306,13 @@ const TradesTable: React.FC<TradesTableProps> = ({
       value = editValue.toUpperCase();
     }
     
-    onUpdateTrade(id, { [field]: value });
+    // Auto-populate name field when gold is selected
+    if (field === 'investmentType' && value === 'gold') {
+      onUpdateTrade(id, { [field]: value, name: '24 carat in gms' });
+    } else {
+      onUpdateTrade(id, { [field]: value });
+    }
+    
     setEditingCell(null);
     setEditValue('');
     

@@ -4,6 +4,7 @@ import { firestoreService } from '../services/firestoreService';
 import { useFirebaseAuth } from './useFirebaseAuth';
 import { getMutualFundService } from '../services/mutualFundApi';
 import { getStockPriceService } from '../services/stockPriceService';
+import { getGoldPriceService } from '../services/goldPriceService';
 import { writeBatch, doc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { navService } from '../services/navService';
@@ -203,6 +204,12 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       if (type === 'stock') {
         const stockService = getStockPriceService();
         price = await stockService.getCurrentPrice(symbol);
+      }
+      
+      // Try Gold Price Service for gold
+      if (!price && type === 'gold') {
+        const goldService = getGoldPriceService();
+        price = await goldService.getCurrentGoldPrice();
       }
       
       // Try Mutual Fund API for mutual funds
