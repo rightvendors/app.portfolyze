@@ -9,6 +9,27 @@ interface CurrentHoldingsTableProps {
   isLoadingPrices?: boolean;
 }
 
+// Tooltip component for large annual yield values
+const Tooltip: React.FC<{ content: string; children: React.ReactNode }> = ({ content, children }) => {
+  const [isVisible, setIsVisible] = useState(false);
+
+  return (
+    <div 
+      className="relative inline-block"
+      onMouseEnter={() => setIsVisible(true)}
+      onMouseLeave={() => setIsVisible(false)}
+    >
+      {children}
+      {isVisible && (
+        <div className="absolute z-50 px-2 py-1 text-xs text-white bg-gray-900 rounded shadow-lg whitespace-nowrap bottom-full left-1/2 transform -translate-x-1/2 mb-1">
+          {content}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, onRefreshPrices, isLoadingPrices }) => {
   const [columnWidths, setColumnWidths] = useState({
     name: 180,
@@ -267,7 +288,13 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
               <div className={`min-h-10 px-3 py-2 text-xs border-r border-gray-300 bg-white flex items-center justify-end ${
                 holding.annualYield >= 0 ? 'text-green-600' : 'text-red-600'
               }`} style={{ width: columnWidths.annualYield, height: 'auto' }}>
-                {formatPercent(holding.annualYield)}
+                {holding.annualYield > 1000 ? (
+                  <Tooltip content={`${formatPercent(holding.annualYield)}`}>
+                    <span className="cursor-help">…</span>
+                  </Tooltip>
+                ) : (
+                  formatPercent(holding.annualYield)
+                )}
               </div>
               
               {/* XIRR */}

@@ -28,7 +28,7 @@ export interface FirestoreTrade {
   date: string;
   bucketId?: string;
   // Additional fields from existing Trade interface
-  investmentType?: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'index_fund' | 'etf';
+  investmentType?: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf';
   name?: string;
   isin?: string;
   interestRate?: number;

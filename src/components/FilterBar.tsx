@@ -27,7 +27,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
     { value: 'fixed_deposit', label: 'Fixed Deposit' },
     { value: 'gold', label: 'Gold' },
     { value: 'silver', label: 'Silver' },
-    { value: 'index_fund', label: 'Index Fund' },
+    { value: 'nps', label: 'NPS' },
     { value: 'etf', label: 'ETF' }
   ];
 

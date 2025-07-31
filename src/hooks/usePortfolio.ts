@@ -351,8 +351,8 @@ export const usePortfolio = () => {
       } else if (type === 'silver') {
         // Mock silver price per gram
         price = 72.50 + (Math.random() - 0.5) * 5;
-      } else if (type === 'etf' || type === 'index_fund') {
-        // Mock ETF/Index fund prices
+              } else if (type === 'etf' || type === 'nps') {
+        // Mock ETF/NPS prices
         price = Math.random() * 200 + 50;
       } else {
         // Default for bonds, FDs, etc.

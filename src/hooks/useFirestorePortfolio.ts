@@ -16,7 +16,7 @@ interface UseFirestorePortfolioOptions {
 
 // Enhanced filter interface with asset type filtering
 interface EnhancedFilterState extends FilterState {
-  assetType?: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'index_fund' | 'etf' | '';
+  assetType?: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf' | '';
   minValue?: number;
   maxValue?: number;
 }

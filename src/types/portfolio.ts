@@ -1,7 +1,7 @@
 export interface Trade {
   id: string;
   date: string;
-  investmentType: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'index_fund' | 'etf';
+  investmentType: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf';
   name: string;
   isin?: string;
   interestRate?: number;
