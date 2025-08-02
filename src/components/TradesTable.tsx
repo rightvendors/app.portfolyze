@@ -514,14 +514,19 @@ const TradesTable: React.FC<TradesTableProps> = ({
       setIsinError('');
     }
     
+    // Set editing cell and value
     setEditingCell({ id, field });
     setEditValue(currentValue?.toString() || '');
+    
+    console.log(`Editing cell: ${field} for trade ${id}, value: ${currentValue}`);
   };
 
   const handleCellSave = () => {
     if (!editingCell) return;
     
     const { id, field } = editingCell;
+    console.log(`Saving cell: ${field} for trade ${id}, value: ${editValue}`);
+    
     let value: any = editValue;
     
     // Convert to appropriate type
@@ -778,7 +783,10 @@ const TradesTable: React.FC<TradesTableProps> = ({
           <div className="min-h-8 px-1 py-1 border-r border-b border-gray-300 bg-white" style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
             <select
               value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
+              onChange={(e) => {
+                console.log(`Transaction type changed to: ${e.target.value}`);
+                setEditValue(e.target.value);
+              }}
               onBlur={handleCellSave}
               onKeyDown={handleKeyPress}
               className="w-full min-h-6 text-xs border-none outline-none bg-white"

@@ -728,7 +728,15 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       filtered = filtered.filter(trade => 
         trade.name.toLowerCase().includes(searchLower) ||
         (trade.isin && trade.isin.toLowerCase().includes(searchLower)) ||
-        trade.brokerBank.toLowerCase().includes(searchLower)
+        trade.brokerBank.toLowerCase().includes(searchLower) ||
+        trade.investmentType.toLowerCase().includes(searchLower) ||
+        trade.transactionType.toLowerCase().includes(searchLower) ||
+        trade.bucketAllocation.toLowerCase().includes(searchLower) ||
+        trade.date.toLowerCase().includes(searchLower) ||
+        trade.quantity.toString().includes(searchLower) ||
+        trade.buyRate.toString().includes(searchLower) ||
+        trade.buyAmount.toString().includes(searchLower) ||
+        (trade.interestRate && trade.interestRate.toString().includes(searchLower))
       );
     }
     
