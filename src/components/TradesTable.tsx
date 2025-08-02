@@ -177,9 +177,18 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
   // Export data to Excel file
   const exportData = () => {
+    // Helper function to format date as dd-mm-yyyy
+    const formatDate = (dateString: string) => {
+      const date = new Date(dateString);
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}-${month}-${year}`;
+    };
+
     // Prepare data for Excel export
     const excelData = trades.map(trade => ({
-      'Date': trade.date,
+      'Date': formatDate(trade.date),
       'Investment Type': investmentTypes.find(t => t.value === trade.investmentType)?.label || trade.investmentType,
       'ISIN Number': trade.isin || '',
       'Name': trade.name || '',
@@ -227,7 +236,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
     // Create template data with headers and example rows
     const templateData = [
       {
-        'Date': '2024-01-15',
+        'Date': '15-01-2024',
         'Investment Type': 'Stock',
         'ISIN Number': '',
         'Name': 'Example Stock',
@@ -240,7 +249,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
         'Bucket Allocation': 'Bucket 1A'
       },
       {
-        'Date': '2024-01-16',
+        'Date': '16-01-2024',
         'Investment Type': 'Mutual Fund',
         'ISIN Number': 'INF209KA12Z1',
         'Name': 'Example Mutual Fund',
