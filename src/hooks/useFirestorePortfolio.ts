@@ -919,6 +919,34 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     }
   };
 
+  const deleteAllTrades = async () => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log(`Deleting all trades for user: ${user.uid}`);
+      setSaveNotification({ show: true, message: 'Deleting all trades...', type: 'loading' });
+      
+      // Clear local state immediately
+      setTrades([]);
+      setCalculatedHoldings([]);
+      setCalculatedBuckets([]);
+      
+      // Clear price cache
+      setPriceCache({});
+      
+      // Delete all trades from Firebase
+      await firestoreService.deleteAllTrades(user.uid);
+      
+      console.log('All trades deleted from Firebase successfully');
+      setSaveNotification({ show: true, message: 'All trades deleted successfully!', type: 'success' });
+    } catch (error) {
+      console.error('Error deleting all trades:', error);
+      setSaveNotification({ show: true, message: 'Failed to delete all trades', type: 'error' });
+      setError('Failed to delete all trades');
+      throw error;
+    }
+  };
+
   const updateBucketTarget = async (bucketName: string, targetAmount: number) => {
     if (!user) throw new Error('User not authenticated');
     
@@ -1167,6 +1195,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     addTrade,
     updateTrade,
     deleteTrade,
+    deleteAllTrades,
     updateBucketTarget,
     updateBucketPurpose,
     updateAllPrices,

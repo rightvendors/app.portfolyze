@@ -33,6 +33,7 @@ function Dashboard() {
     addTrade,
     updateTrade,
     deleteTrade,
+    deleteAllTrades,
     updateBucketTarget,
     updateBucketPurpose,
     updateAllPrices,
@@ -170,6 +171,7 @@ function Dashboard() {
                       onAddTrade={addTrade}
                       onUpdateTrade={updateTrade}
                       onDeleteTrade={deleteTrade}
+                      onDeleteAllTrades={deleteAllTrades}
                       updatePriceCacheWithNAV={updatePriceCacheWithNAV}
                     />
                   </ErrorBoundary>

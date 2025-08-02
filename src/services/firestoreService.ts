@@ -105,6 +105,29 @@ export class FirestoreService {
     }
   }
 
+  async deleteAllTrades(userId: string): Promise<void> {
+    try {
+      const tradesRef = this.getUserCollection(userId, 'trades');
+      const snapshot = await getDocs(tradesRef);
+      
+      if (snapshot.empty) {
+        console.log('No trades to delete');
+        return;
+      }
+      
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      
+      await batch.commit();
+      console.log(`Deleted ${snapshot.docs.length} trades`);
+    } catch (error) {
+      console.error('Error deleting all trades:', error);
+      throw error;
+    }
+  }
+
   // HOLDINGS OPERATIONS
   async getUserHoldings(userId: string): Promise<Holding[]> {
     try {

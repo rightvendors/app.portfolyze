@@ -12,6 +12,7 @@ interface TradesTableProps {
   onAddTrade: (trade: Omit<Trade, 'id' | 'buyAmount'>) => void;
   onUpdateTrade: (id: string, updates: Partial<Trade>) => void;
   onDeleteTrade: (id: string) => void;
+  onDeleteAllTrades?: () => Promise<void>;
   updatePriceCacheWithNAV?: (isin: string, nav: number) => void;
 }
 
@@ -20,6 +21,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   onAddTrade,
   onUpdateTrade,
   onDeleteTrade,
+  onDeleteAllTrades,
   updatePriceCacheWithNAV
 }) => {
   const [editingCell, setEditingCell] = useState<{ id: string; field: string } | null>(null);
@@ -231,18 +233,35 @@ const TradesTable: React.FC<TradesTableProps> = ({
     XLSX.writeFile(wb, fileName);
   };
 
-  // Clear localStorage data (for debugging)
-  const clearLocalStorage = () => {
+  // Clear all trades from Firebase (for debugging)
+  const clearAllTrades = async () => {
+    // Confirmation dialog to prevent accidental deletion
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ALL ${trades.length} trades? This action cannot be undone and will permanently remove all your trade data from the cloud database.`
+    );
+    
+    if (!confirmed) {
+      console.log('Clear all trades cancelled by user');
+      return;
+    }
+    
     try {
-      localStorage.removeItem('portfolio_trades');
-      localStorage.removeItem('portfolio_bucket_targets');
-      localStorage.removeItem('portfolio_price_cache');
-      localStorage.removeItem('portfolio_bucket_targets_purposes');
-      console.log('LocalStorage cleared successfully');
-      alert('LocalStorage cleared successfully. Please refresh the page.');
+      if (onDeleteAllTrades) {
+        await onDeleteAllTrades();
+        console.log('All trades cleared successfully from Firebase');
+        alert('All trades cleared successfully from Firebase!');
+      } else {
+        // Fallback to localStorage clearing if Firebase function not available
+        localStorage.removeItem('portfolio_trades');
+        localStorage.removeItem('portfolio_bucket_targets');
+        localStorage.removeItem('portfolio_price_cache');
+        localStorage.removeItem('portfolio_bucket_targets_purposes');
+        console.log('LocalStorage cleared successfully (fallback)');
+        alert('LocalStorage cleared successfully. Please refresh the page.');
+      }
     } catch (error) {
-      console.error('Error clearing localStorage:', error);
-      alert('Error clearing localStorage');
+      console.error('Error clearing trades:', error);
+      alert('Error clearing trades: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
@@ -844,11 +863,11 @@ const TradesTable: React.FC<TradesTableProps> = ({
           
           {/* Debug button - remove in production */}
           <button
-            onClick={clearLocalStorage}
+            onClick={clearAllTrades}
             className="flex items-center gap-1 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
-            title="Clear localStorage data (for debugging)"
+            title="Clear all trades from Firebase (for debugging)"
           >
-            🧹 Clear Cache
+            🧹 Clear All Trades
           </button>
         </div>
       </div>
