@@ -162,6 +162,17 @@ export const useFirebaseAuth = () => {
         recaptchaVerifier.clear();
         setRecaptchaVerifier(null);
       }
+      
+      // Clear localStorage data to prevent conflicts
+      try {
+        localStorage.removeItem('portfolio_trades');
+        localStorage.removeItem('portfolio_bucket_targets');
+        localStorage.removeItem('portfolio_price_cache');
+        localStorage.removeItem('portfolio_bucket_targets_purposes');
+        console.log('Cleared localStorage data on sign out');
+      } catch (localStorageError) {
+        console.warn('Error clearing localStorage:', localStorageError);
+      }
     } catch (error: any) {
       setError(error.message);
       throw error;

@@ -231,6 +231,21 @@ const TradesTable: React.FC<TradesTableProps> = ({
     XLSX.writeFile(wb, fileName);
   };
 
+  // Clear localStorage data (for debugging)
+  const clearLocalStorage = () => {
+    try {
+      localStorage.removeItem('portfolio_trades');
+      localStorage.removeItem('portfolio_bucket_targets');
+      localStorage.removeItem('portfolio_price_cache');
+      localStorage.removeItem('portfolio_bucket_targets_purposes');
+      console.log('LocalStorage cleared successfully');
+      alert('LocalStorage cleared successfully. Please refresh the page.');
+    } catch (error) {
+      console.error('Error clearing localStorage:', error);
+      alert('Error clearing localStorage');
+    }
+  };
+
   // Download Excel template
   const downloadTemplate = () => {
     // Create template data with headers and example rows
@@ -825,6 +840,15 @@ const TradesTable: React.FC<TradesTableProps> = ({
           >
             <Plus size={10} />
             Add Row
+          </button>
+          
+          {/* Debug button - remove in production */}
+          <button
+            onClick={clearLocalStorage}
+            className="flex items-center gap-1 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
+            title="Clear localStorage data (for debugging)"
+          >
+            🧹 Clear Cache
           </button>
         </div>
       </div>

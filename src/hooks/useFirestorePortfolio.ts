@@ -305,11 +305,13 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   const loadTrades = useCallback(async (userId: string) => {
     if (subscriptions.trades) return; // Prevent duplicate subscriptions
     
+    console.log(`Loading trades for user: ${userId}`);
     setLoadingStates(prev => ({ ...prev, trades: true }));
     
     try {
       // First, get immediate data
       const immediateData = await firestoreService.getUserTrades(userId);
+      console.log(`Immediate trades loaded: ${immediateData.length} trades`);
       setTrades(immediateData);
       
       // Then set up real-time subscription with timeout
@@ -321,11 +323,15 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       const unsubscribe = firestoreService.subscribeToUserTrades(userId, (newTrades) => {
         clearTimeout(timeoutId);
         
+        console.log(`Real-time trades update: ${newTrades.length} trades`);
+        
         // Ensure we're getting the latest data and handle deletions properly
         setTrades(prevTrades => {
           // If newTrades is shorter than prevTrades, it means trades were deleted
           if (newTrades.length < prevTrades.length) {
             console.log(`Trades deleted: ${prevTrades.length} -> ${newTrades.length}`);
+            const deletedTrades = prevTrades.filter(pt => !newTrades.find(nt => nt.id === pt.id));
+            console.log('Deleted trade IDs:', deletedTrades.map(t => t.id));
           }
           
           // Always use the new data from Firestore
@@ -639,6 +645,9 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       setLoading(false);
       setLoadingStates({ trades: false, holdings: false, buckets: false, prices: false });
       setHasLoadedInitialData(false);
+      setPriceCache({}); // Clear price cache
+      setError(null); // Clear any errors
+      console.log('Cleared all portfolio data on user logout');
       return;
     }
 
@@ -862,11 +871,16 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     try {
       // Store original trade for rollback
       const originalTrade = trades.find(t => t.id === id);
+      console.log(`Deleting trade with ID: ${id}`, originalTrade);
       
       setSaveNotification({ show: true, message: 'Deleting trade...', type: 'loading' });
       
       // Update local state immediately for better UX
-      setTrades(prev => prev.filter(trade => trade.id !== id));
+      setTrades(prev => {
+        const newTrades = prev.filter(trade => trade.id !== id);
+        console.log(`Local trades updated: ${prev.length} -> ${newTrades.length}`);
+        return newTrades;
+      });
       
       // Clear any cached data for this trade
       const tradeToDelete = originalTrade;
@@ -880,19 +894,24 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       }
       
       // Then delete from Firebase
+      console.log(`Deleting from Firebase: user=${user.uid}, tradeId=${id}`);
       await firestoreService.deleteTrade(user.uid, id);
+      console.log('Firebase delete completed successfully');
       
       // Force refresh of holdings calculation
       setCalculatedHoldings(prev => {
         const newHoldings = calculateCurrentHoldings();
+        console.log(`Holdings recalculated: ${prev.length} -> ${newHoldings.length}`);
         return newHoldings;
       });
       
       setSaveNotification({ show: true, message: 'Trade deleted successfully!', type: 'success' });
     } catch (error) {
+      console.error('Error deleting trade:', error);
       // Rollback local state if Firebase delete failed
       if (originalTrade) {
         setTrades(prev => [...prev, originalTrade]);
+        console.log('Rolled back local state due to Firebase delete failure');
       }
       setSaveNotification({ show: true, message: 'Failed to delete trade', type: 'error' });
       setError('Failed to delete trade');
