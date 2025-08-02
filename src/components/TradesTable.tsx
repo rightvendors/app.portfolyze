@@ -50,6 +50,115 @@ const TradesTable: React.FC<TradesTableProps> = ({
   const tableRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Autosave state management
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [autosaveMessage, setAutosaveMessage] = useState('');
+  const [pendingChanges, setPendingChanges] = useState<{ id: string; field: string; value: any }[]>([]);
+  const autosaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef<{ [key: string]: number }>({});
+
+  // Autosave functions
+  const scheduleAutosave = (change: { id: string; field: string; value: any }) => {
+    // Clear existing timeout
+    if (autosaveTimeoutRef.current) {
+      clearTimeout(autosaveTimeoutRef.current);
+    }
+
+    // Add change to pending changes
+    setPendingChanges(prev => {
+      const existing = prev.findIndex(p => p.id === change.id && p.field === change.field);
+      if (existing >= 0) {
+        const updated = [...prev];
+        updated[existing] = change;
+        return updated;
+      }
+      return [...prev, change];
+    });
+
+    // Schedule autosave with 1.5 second delay
+    autosaveTimeoutRef.current = setTimeout(() => {
+      performAutosave();
+    }, 1500);
+  };
+
+  const performAutosave = async () => {
+    if (pendingChanges.length === 0) return;
+
+    setAutosaveStatus('saving');
+    setAutosaveMessage('Saving changes...');
+
+    try {
+      // Process all pending changes
+      const savePromises = pendingChanges.map(async (change) => {
+        const changeKey = `${change.id}-${change.field}`;
+        const retryCount = retryCountRef.current[changeKey] || 0;
+        
+        try {
+          await onUpdateTrade(change.id, { [change.field]: change.value });
+          // Clear retry count on success
+          delete retryCountRef.current[changeKey];
+          return { success: true, change };
+        } catch (error) {
+          console.error(`Error saving change:`, change, error);
+          
+          // Retry logic (max 3 retries)
+          if (retryCount < 3) {
+            retryCountRef.current[changeKey] = retryCount + 1;
+            // Retry after 2 seconds
+            setTimeout(() => {
+              scheduleAutosave(change);
+            }, 2000);
+            return { success: false, change, error, willRetry: true };
+          } else {
+            return { success: false, change, error, willRetry: false };
+          }
+        }
+      });
+
+      const results = await Promise.allSettled(savePromises);
+      const successful = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+      const failed = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value?.success)).length;
+      const willRetry = results.filter(r => r.status === 'fulfilled' && r.value?.willRetry).length;
+
+      if (failed === 0) {
+        setAutosaveStatus('saved');
+        setAutosaveMessage('All changes saved');
+        setPendingChanges([]);
+      } else if (willRetry > 0) {
+        setAutosaveStatus('saving');
+        setAutosaveMessage(`Saving... (${willRetry} retrying)`);
+      } else {
+        setAutosaveStatus('error');
+        setAutosaveMessage(`${failed} changes failed to save`);
+      }
+
+    } catch (error) {
+      console.error('Autosave error:', error);
+      setAutosaveStatus('error');
+      setAutosaveMessage('Save failed');
+    }
+  };
+
+  // Cleanup autosave timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (autosaveTimeoutRef.current) {
+        clearTimeout(autosaveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Clear autosave status after delay
+  React.useEffect(() => {
+    if (autosaveStatus === 'saved') {
+      const timer = setTimeout(() => {
+        setAutosaveStatus('idle');
+        setAutosaveMessage('');
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [autosaveStatus]);
+
   // Lookup mutual fund by ISIN
   const lookupMutualFundByISIN = async (isin: string, tradeId: string) => {
     if (isin.length < 12) {
@@ -286,7 +395,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
         'Date': '16-01-2024',
         'Investment Type': 'Mutual Fund',
         'ISIN Number': 'INF209KA12Z1',
-        'Name': 'Example Mutual Fund',
+        'Name': '', // Can be blank for mutual funds - name will be fetched from ISIN
         'Interest %': '',
         'Buy/Sell': 'BUY',
         'Quantity': 1000,
@@ -395,7 +504,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
             date: parsedDate,
             investmentType: mappedInvestmentType,
             isin: row['ISIN Number'] || '',
-            name: row['Name'] || '',
+            name: row['Name'] || '', // Allow blank names - will be fetched from ISIN for mutual funds
             interestRate: parseFloat(row['Interest %']) || 0,
             transactionType: mappedTransactionType,
             quantity: parseFloat(row['Quantity']) || 0,
@@ -406,10 +515,18 @@ const TradesTable: React.FC<TradesTableProps> = ({
           };
         });
 
-        // Validate imported trades
+        // Validate imported trades - allow blank names for mutual funds and be more lenient
         const validTrades = importedTrades.filter((trade: any) => {
-          const isValid = trade.date && trade.investmentType && trade.transactionType && 
-            trade.quantity > 0 && trade.buyRate > 0 && trade.name;
+          // Basic validation - require date, investment type, transaction type, quantity, and buy rate
+          const hasRequiredFields = trade.date && trade.investmentType && trade.transactionType && 
+            trade.quantity > 0 && trade.buyRate > 0;
+          
+          // For mutual funds, allow blank names if ISIN is provided
+          const hasValidName = trade.investmentType === 'mutual_fund' ? 
+            (trade.isin || trade.name) : // Allow blank name if ISIN exists for mutual funds
+            trade.name; // Require name for other investment types
+          
+          const isValid = hasRequiredFields && hasValidName;
           
           if (!isValid) {
             console.warn('Invalid trade found:', trade);
@@ -429,6 +546,33 @@ const TradesTable: React.FC<TradesTableProps> = ({
             try {
               // Remove the temporary ID and let Firebase generate a proper one
               const { id, ...tradeData } = trade;
+              
+              // For mutual funds with ISIN, fetch the name from ISIN
+              if (tradeData.investmentType === 'mutual_fund' && tradeData.isin) {
+                try {
+                  console.log(`Fetching name for ISIN: ${tradeData.isin}`);
+                  const mutualFundService = getMutualFundService();
+                  const navData = await mutualFundService.searchByISIN(tradeData.isin);
+                  
+                  if (navData && navData.scheme_name) {
+                    // Override user-provided name with ISIN-fetched name
+                    tradeData.name = navData.scheme_name;
+                    console.log(`Fetched name for ISIN ${tradeData.isin}: ${navData.scheme_name}`);
+                  } else {
+                    console.warn(`Could not fetch name for ISIN: ${tradeData.isin}`);
+                    // Keep existing name or use a placeholder
+                    if (!tradeData.name) {
+                      tradeData.name = `Unknown Fund (${tradeData.isin})`;
+                    }
+                  }
+                } catch (isinError) {
+                  console.warn(`Error fetching name for ISIN ${tradeData.isin}:`, isinError);
+                  // Keep existing name or use a placeholder
+                  if (!tradeData.name) {
+                    tradeData.name = `Unknown Fund (${tradeData.isin})`;
+                  }
+                }
+              }
               
               // Add the trade using the onAddTrade function
               await onAddTrade(tradeData);
@@ -525,7 +669,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
     if (!editingCell) return;
     
     const { id, field } = editingCell;
-    console.log(`Saving cell: ${field} for trade ${id}, value: ${editValue}`);
+    console.log(`Cell edit completed: ${field} for trade ${id}, value: ${editValue}`);
     
     let value: any = editValue;
     
@@ -536,18 +680,23 @@ const TradesTable: React.FC<TradesTableProps> = ({
       value = editValue.toUpperCase();
     }
     
-    // Auto-populate name field when gold or silver is selected
+    // Handle special cases that need immediate save (investment type changes)
     if (field === 'investmentType') {
+      let updates: any = { [field]: value };
+      
       if (value === 'gold') {
-        onUpdateTrade(id, { [field]: value, name: '24 carats Gold in gms' });
+        updates.name = '24 carats Gold in gms';
       } else if (value === 'silver') {
-        onUpdateTrade(id, { [field]: value, name: 'Silver in Kgs' });
+        updates.name = 'Silver in Kgs';
       } else {
-        // Clear name field when changing to other investment types
-        onUpdateTrade(id, { [field]: value, name: '' });
+        updates.name = '';
       }
+      
+      // Save immediately for investment type changes
+      onUpdateTrade(id, updates);
     } else {
-      onUpdateTrade(id, { [field]: value });
+      // Schedule autosave for other changes
+      scheduleAutosave({ id, field, value });
     }
     
     setEditingCell(null);
@@ -562,6 +711,23 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
+      // Force immediate save when Enter is pressed
+      if (editingCell) {
+        const { id, field } = editingCell;
+        let value: any = editValue;
+        
+        // Convert to appropriate type
+        if (['quantity', 'buyRate', 'sellRate', 'interestRate'].includes(field)) {
+          value = parseFloat(editValue) || 0;
+        } else if (field === 'isin') {
+          value = editValue.toUpperCase();
+        }
+        
+        // Save immediately for Enter key
+        onUpdateTrade(id, { [field]: value });
+        setAutosaveStatus('saved');
+        setAutosaveMessage('Saved');
+      }
       handleCellSave();
     } else if (e.key === 'Escape') {
       setEditingCell(null);
@@ -888,7 +1054,33 @@ const TradesTable: React.FC<TradesTableProps> = ({
   return (
     <div className="p-4 bg-white">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xs font-semibold text-gray-800">Portfolio Trades</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-xs font-semibold text-gray-800">Portfolio Trades</h2>
+          
+          {/* Autosave Status */}
+          {autosaveStatus !== 'idle' && (
+            <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${
+              autosaveStatus === 'saving' ? 'bg-blue-50 text-blue-700' :
+              autosaveStatus === 'saved' ? 'bg-green-50 text-green-700' :
+              autosaveStatus === 'error' ? 'bg-red-50 text-red-700' : ''
+            }`}>
+              {autosaveStatus === 'saving' && (
+                <div className="w-3 h-3 border border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              )}
+              {autosaveStatus === 'saved' && (
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              )}
+              {autosaveStatus === 'error' && (
+                <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+              )}
+              <span className="font-medium">{autosaveMessage}</span>
+              {pendingChanges.length > 0 && autosaveStatus === 'saving' && (
+                <span className="text-xs opacity-75">({pendingChanges.length} pending)</span>
+              )}
+            </div>
+          )}
+        </div>
+        
         <div className="flex items-center gap-2">
           <button
             onClick={exportData}
