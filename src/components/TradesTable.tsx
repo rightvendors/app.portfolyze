@@ -1,10 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { Trade } from '../types/portfolio';
-import { Trash2, Plus, Download, Upload, Loader } from 'lucide-react';
+import { Trash2, Plus, Download, Upload, Loader, FileText } from 'lucide-react';
 import { getMutualFundService } from '../services/mutualFundApi';
 import { getStockPriceService } from '../services/stockPriceService';
 import { navService, MutualFundData } from '../services/navService';
 import StockSuggestionDropdown from './StockSuggestionDropdown';
+import * as XLSX from 'xlsx';
 
 interface TradesTableProps {
   trades: Trade[];
@@ -174,39 +175,113 @@ const TradesTable: React.FC<TradesTableProps> = ({
     }
   };
 
-  // Export data to JSON file
+  // Export data to Excel file
   const exportData = () => {
-    const dataToExport = {
-      trades,
-      exportDate: new Date().toISOString(),
-      version: '1.0'
-    };
-    
-    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], {
-      type: 'application/json'
-    });
-    
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `portfolio-trades-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Prepare data for Excel export
+    const excelData = trades.map(trade => ({
+      'Date': trade.date,
+      'Investment Type': investmentTypes.find(t => t.value === trade.investmentType)?.label || trade.investmentType,
+      'ISIN Number': trade.isin || '',
+      'Name': trade.name || '',
+      'Interest %': trade.interestRate || '',
+      'Buy/Sell': trade.transactionType.toUpperCase(),
+      'Quantity': trade.quantity,
+      'Buy Rate': trade.buyRate,
+      'Buy Amount': trade.buyAmount,
+      'Broker/Bank': trade.brokerBank || '',
+      'Bucket Allocation': getBucketDisplayValue(trade.bucketAllocation)
+    }));
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelData);
+
+    // Set column widths
+    const colWidths = [
+      { wch: 12 }, // Date
+      { wch: 15 }, // Investment Type
+      { wch: 15 }, // ISIN Number
+      { wch: 30 }, // Name
+      { wch: 10 }, // Interest %
+      { wch: 10 }, // Buy/Sell
+      { wch: 12 }, // Quantity
+      { wch: 12 }, // Buy Rate
+      { wch: 15 }, // Buy Amount
+      { wch: 20 }, // Broker/Bank
+      { wch: 18 }  // Bucket Allocation
+    ];
+    ws['!cols'] = colWidths;
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Portfolio Trades');
+
+    // Generate filename with current date
+    const fileName = `portfolio-trades-${new Date().toISOString().split('T')[0]}.xlsx`;
+
+    // Save file
+    XLSX.writeFile(wb, fileName);
   };
 
-  // Test NAV service
-  const testNavService = async () => {
-    try {
-      console.log('Testing NAV service from TradesTable...');
-      await navService.testService();
-    } catch (error) {
-      console.error('Error testing NAV service:', error);
-    }
+  // Download Excel template
+  const downloadTemplate = () => {
+    // Create template data with headers and example rows
+    const templateData = [
+      {
+        'Date': '2024-01-15',
+        'Investment Type': 'Stock',
+        'ISIN Number': '',
+        'Name': 'Example Stock',
+        'Interest %': '',
+        'Buy/Sell': 'BUY',
+        'Quantity': 100,
+        'Buy Rate': 150.50,
+        'Buy Amount': 15050,
+        'Broker/Bank': 'Example Broker',
+        'Bucket Allocation': 'Bucket 1A'
+      },
+      {
+        'Date': '2024-01-16',
+        'Investment Type': 'Mutual Fund',
+        'ISIN Number': 'INF209KA12Z1',
+        'Name': 'Example Mutual Fund',
+        'Interest %': '',
+        'Buy/Sell': 'BUY',
+        'Quantity': 1000,
+        'Buy Rate': 25.75,
+        'Buy Amount': 25750,
+        'Broker/Bank': 'Example Bank',
+        'Bucket Allocation': 'Bucket 2'
+      }
+    ];
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(templateData);
+
+    // Set column widths
+    const colWidths = [
+      { wch: 12 }, // Date
+      { wch: 15 }, // Investment Type
+      { wch: 15 }, // ISIN Number
+      { wch: 30 }, // Name
+      { wch: 10 }, // Interest %
+      { wch: 10 }, // Buy/Sell
+      { wch: 12 }, // Quantity
+      { wch: 12 }, // Buy Rate
+      { wch: 15 }, // Buy Amount
+      { wch: 20 }, // Broker/Bank
+      { wch: 18 }  // Bucket Allocation
+    ];
+    ws['!cols'] = colWidths;
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+
+    // Save template file
+    XLSX.writeFile(wb, 'portfolio-trades-template.xlsx');
   };
 
-  // Import data from JSON file
+  // Import data from Excel file
   const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -214,31 +289,82 @@ const TradesTable: React.FC<TradesTableProps> = ({
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const content = e.target?.result as string;
-        const importedData = JSON.parse(content);
-        
-        if (importedData.trades && Array.isArray(importedData.trades)) {
-          // Validate and import trades
-          const validTrades = importedData.trades.filter((trade: any) => 
-            trade.id && trade.date && trade.investmentType && trade.transactionType
-          );
-          
-          if (validTrades.length > 0) {
-            // Replace current trades with imported ones
-            localStorage.setItem('portfolio_trades', JSON.stringify(validTrades));
-            window.location.reload(); // Reload to apply changes
-          } else {
-            alert('No valid trades found in the imported file.');
-          }
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+        // Convert Excel data to Trade format
+        const importedTrades = jsonData.map((row: any, index: number) => {
+          // Map Excel columns to Trade properties
+          const investmentTypeMap: { [key: string]: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf' } = {
+            'Stock': 'stock',
+            'Mutual Fund': 'mutual_fund',
+            'Bond': 'bond',
+            'Fixed Deposit': 'fixed_deposit',
+            'Gold': 'gold',
+            'Silver': 'silver',
+            'NPS': 'nps',
+            'ETF': 'etf'
+          };
+
+          const transactionTypeMap: { [key: string]: 'buy' | 'sell' } = {
+            'BUY': 'buy',
+            'SELL': 'sell'
+          };
+
+          const bucketMap: { [key: string]: string } = {
+            'Bucket 1A': 'bucket1a',
+            'Bucket 1B': 'bucket1b',
+            'Bucket 1C': 'bucket1c',
+            'Bucket 1D': 'bucket1d',
+            'Bucket 1E': 'bucket1e',
+            'Bucket 2': 'bucket2',
+            'Bucket 3': 'bucket3'
+          };
+
+          const investmentTypeValue = row['Investment Type'];
+          const mappedInvestmentType: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf' = 
+            (investmentTypeMap[investmentTypeValue] as 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf') || 'stock';
+          const mappedTransactionType = transactionTypeMap[row['Buy/Sell']] || 'buy';
+
+          return {
+            id: `imported-${Date.now()}-${index}`,
+            date: row['Date'] || new Date().toISOString().split('T')[0],
+            investmentType: mappedInvestmentType,
+            isin: row['ISIN Number'] || '',
+            name: row['Name'] || '',
+            interestRate: parseFloat(row['Interest %']) || 0,
+            transactionType: mappedTransactionType,
+            quantity: parseFloat(row['Quantity']) || 0,
+            buyRate: parseFloat(row['Buy Rate']) || 0,
+            buyAmount: parseFloat(row['Buy Amount']) || 0,
+            brokerBank: row['Broker/Bank'] || '',
+            bucketAllocation: bucketMap[row['Bucket Allocation']] || ''
+          };
+        });
+
+        // Validate imported trades
+        const validTrades = importedTrades.filter((trade: any) => 
+          trade.date && trade.investmentType && trade.transactionType && 
+          trade.quantity > 0 && trade.buyRate > 0
+        );
+
+        if (validTrades.length > 0) {
+          // Replace current trades with imported ones
+          localStorage.setItem('portfolio_trades', JSON.stringify(validTrades));
+          window.location.reload(); // Reload to apply changes
         } else {
-          alert('Invalid file format. Please select a valid portfolio export file.');
+          alert('No valid trades found in the imported file. Please check the format.');
         }
       } catch (error) {
-        alert('Error reading file. Please ensure it\'s a valid JSON file.');
+        console.error('Error reading Excel file:', error);
+        alert('Error reading Excel file. Please ensure it\'s a valid Excel file.');
       }
     };
     
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
     event.target.value = ''; // Reset input
   };
   const investmentTypes = [
@@ -670,11 +796,19 @@ const TradesTable: React.FC<TradesTableProps> = ({
             Import
             <input
               type="file"
-              accept=".json"
+              accept=".xlsx"
               onChange={importData}
               className="hidden"
             />
           </label>
+          
+          <button
+            onClick={downloadTemplate}
+            className="flex items-center gap-1 px-2 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 transition-colors"
+          >
+            <FileText size={10} />
+            Template
+          </button>
           
           <button
             onClick={addNewRow}
@@ -682,13 +816,6 @@ const TradesTable: React.FC<TradesTableProps> = ({
           >
             <Plus size={10} />
             Add Row
-          </button>
-          
-          <button
-            onClick={testNavService}
-            className="flex items-center gap-1 px-2 py-1 bg-purple-500 text-white rounded text-xs hover:bg-purple-600 transition-colors"
-          >
-            Test NAV
           </button>
         </div>
       </div>
