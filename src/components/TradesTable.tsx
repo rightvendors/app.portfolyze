@@ -325,12 +325,12 @@ const TradesTable: React.FC<TradesTableProps> = ({
   };
 
   // Import data from Excel file
-  const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const importData = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
@@ -372,9 +372,27 @@ const TradesTable: React.FC<TradesTableProps> = ({
             (investmentTypeMap[investmentTypeValue] as 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf') || 'stock';
           const mappedTransactionType = transactionTypeMap[row['Buy/Sell']] || 'buy';
 
+          // Parse date - handle both dd-mm-yyyy and yyyy-mm-dd formats
+          let parsedDate = new Date().toISOString().split('T')[0]; // Default to today
+          if (row['Date']) {
+            const dateStr = row['Date'].toString();
+            if (dateStr.includes('-')) {
+              const parts = dateStr.split('-');
+              if (parts.length === 3) {
+                if (parts[0].length === 4) {
+                  // yyyy-mm-dd format
+                  parsedDate = dateStr;
+                } else {
+                  // dd-mm-yyyy format, convert to yyyy-mm-dd
+                  parsedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
+              }
+            }
+          }
+
           return {
             id: `imported-${Date.now()}-${index}`,
-            date: row['Date'] || new Date().toISOString().split('T')[0],
+            date: parsedDate,
             investmentType: mappedInvestmentType,
             isin: row['ISIN Number'] || '',
             name: row['Name'] || '',
@@ -389,15 +407,53 @@ const TradesTable: React.FC<TradesTableProps> = ({
         });
 
         // Validate imported trades
-        const validTrades = importedTrades.filter((trade: any) => 
-          trade.date && trade.investmentType && trade.transactionType && 
-          trade.quantity > 0 && trade.buyRate > 0
-        );
+        const validTrades = importedTrades.filter((trade: any) => {
+          const isValid = trade.date && trade.investmentType && trade.transactionType && 
+            trade.quantity > 0 && trade.buyRate > 0 && trade.name;
+          
+          if (!isValid) {
+            console.warn('Invalid trade found:', trade);
+          }
+          
+          return isValid;
+        });
+
+        console.log(`Found ${jsonData.length} rows in Excel, ${validTrades.length} valid trades`);
 
         if (validTrades.length > 0) {
-          // Replace current trades with imported ones
-          localStorage.setItem('portfolio_trades', JSON.stringify(validTrades));
-          window.location.reload(); // Reload to apply changes
+          // Add imported trades to existing trades using onAddTrade function
+          console.log(`Importing ${validTrades.length} trades`);
+          
+          // Process each trade sequentially to avoid overwhelming the system
+          const importPromises = validTrades.map(async (trade: any, index: number) => {
+            try {
+              // Remove the temporary ID and let Firebase generate a proper one
+              const { id, ...tradeData } = trade;
+              
+              // Add the trade using the onAddTrade function
+              await onAddTrade(tradeData);
+              
+              console.log(`Imported trade ${index + 1}/${validTrades.length}: ${tradeData.name}`);
+              
+              // Small delay to prevent overwhelming the system
+              await new Promise(resolve => setTimeout(resolve, 100));
+              
+              return true;
+            } catch (error) {
+              console.error(`Error importing trade ${index + 1}:`, error);
+              return false;
+            }
+          });
+          
+          // Wait for all imports to complete
+          const results = await Promise.allSettled(importPromises);
+          const successfulImports = results.filter(result => result.status === 'fulfilled' && result.value).length;
+          
+          if (successfulImports > 0) {
+            alert(`Successfully imported ${successfulImports} out of ${validTrades.length} trades!`);
+          } else {
+            alert('Failed to import any trades. Please check the data format and try again.');
+          }
         } else {
           alert('No valid trades found in the imported file. Please check the format.');
         }
