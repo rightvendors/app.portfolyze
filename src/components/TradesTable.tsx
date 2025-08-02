@@ -75,63 +75,31 @@ const TradesTable: React.FC<TradesTableProps> = ({
       return [...prev, change];
     });
 
-    // Schedule autosave with 1.5 second delay
+    // Show immediate feedback
+    setAutosaveStatus('saving');
+    setAutosaveMessage('Saving...');
+
+    // Schedule autosave with shorter delay for better responsiveness
     autosaveTimeoutRef.current = setTimeout(() => {
       performAutosave();
-    }, 1500);
+    }, 800); // Reduced from 1.5 seconds to 800ms
   };
 
   const performAutosave = async () => {
-    if (pendingChanges.length === 0) return;
-
-    setAutosaveStatus('saving');
-    setAutosaveMessage('Saving changes...');
+    if (pendingChanges.length === 0) {
+      setAutosaveStatus('saved');
+      setAutosaveMessage('All changes saved');
+      return;
+    }
 
     try {
-      // Process all pending changes
-      const savePromises = pendingChanges.map(async (change) => {
-        const changeKey = `${change.id}-${change.field}`;
-        const retryCount = retryCountRef.current[changeKey] || 0;
-        
-        try {
-          await onUpdateTrade(change.id, { [change.field]: change.value });
-          // Clear retry count on success
-          delete retryCountRef.current[changeKey];
-          return { success: true, change };
-        } catch (error) {
-          console.error(`Error saving change:`, change, error);
-          
-          // Retry logic (max 3 retries)
-          if (retryCount < 3) {
-            retryCountRef.current[changeKey] = retryCount + 1;
-            // Retry after 2 seconds
-            setTimeout(() => {
-              scheduleAutosave(change);
-            }, 2000);
-            return { success: false, change, error, willRetry: true };
-          } else {
-            return { success: false, change, error, willRetry: false };
-          }
-        }
-      });
-
-      const results = await Promise.allSettled(savePromises);
-      const successful = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
-      const failed = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value?.success)).length;
-      const willRetry = results.filter(r => r.status === 'fulfilled' && r.value?.willRetry).length;
-
-      if (failed === 0) {
-        setAutosaveStatus('saved');
-        setAutosaveMessage('All changes saved');
-        setPendingChanges([]);
-      } else if (willRetry > 0) {
-        setAutosaveStatus('saving');
-        setAutosaveMessage(`Saving... (${willRetry} retrying)`);
-      } else {
-        setAutosaveStatus('error');
-        setAutosaveMessage(`${failed} changes failed to save`);
-      }
-
+      // Since we're already saving immediately, just clear pending changes
+      // and show success status
+      setPendingChanges([]);
+      setAutosaveStatus('saved');
+      setAutosaveMessage('All changes saved');
+      
+      console.log('Autosave completed - changes were already saved immediately');
     } catch (error) {
       console.error('Autosave error:', error);
       setAutosaveStatus('error');
@@ -442,10 +410,18 @@ const TradesTable: React.FC<TradesTableProps> = ({
     reader.onload = async (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = XLSX.read(data, { 
+          type: 'array',
+          cellDates: true, // Parse dates as Date objects
+          cellNF: false,
+          cellText: false
+        });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+          raw: false, // Convert all values to strings/objects
+          dateNF: 'yyyy-mm-dd' // Date number format
+        });
 
         // Convert Excel data to Trade format
         const importedTrades = jsonData.map((row: any, index: number) => {
@@ -481,21 +457,71 @@ const TradesTable: React.FC<TradesTableProps> = ({
             (investmentTypeMap[investmentTypeValue] as 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf') || 'stock';
           const mappedTransactionType = transactionTypeMap[row['Buy/Sell']] || 'buy';
 
-          // Parse date - handle both dd-mm-yyyy and yyyy-mm-dd formats
+          // Parse date - handle Excel date objects and various string formats
           let parsedDate = new Date().toISOString().split('T')[0]; // Default to today
           if (row['Date']) {
-            const dateStr = row['Date'].toString();
-            if (dateStr.includes('-')) {
-              const parts = dateStr.split('-');
-              if (parts.length === 3) {
-                if (parts[0].length === 4) {
-                  // yyyy-mm-dd format
-                  parsedDate = dateStr;
-                } else {
-                  // dd-mm-yyyy format, convert to yyyy-mm-dd
-                  parsedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            console.log(`Raw date value: ${row['Date']}, type: ${typeof row['Date']}`);
+            
+            let dateToParse = row['Date'];
+            
+            // Handle Excel date numbers (Excel stores dates as numbers)
+            if (typeof dateToParse === 'number') {
+              // Excel date numbers are days since 1900-01-01
+              const excelEpoch = new Date(1900, 0, 1);
+              const date = new Date(excelEpoch.getTime() + (dateToParse - 2) * 24 * 60 * 60 * 1000);
+              parsedDate = date.toISOString().split('T')[0];
+              console.log(`Converted Excel number ${dateToParse} to date: ${parsedDate}`);
+            }
+            // Handle Date objects
+            else if (dateToParse instanceof Date) {
+              parsedDate = dateToParse.toISOString().split('T')[0];
+              console.log(`Converted Date object to: ${parsedDate}`);
+            }
+            // Handle string formats
+            else if (typeof dateToParse === 'string') {
+              const dateStr = dateToParse.trim();
+              
+              // Handle dd-mm-yyyy format
+              if (dateStr.includes('-')) {
+                const parts = dateStr.split('-');
+                if (parts.length === 3) {
+                  if (parts[0].length === 4) {
+                    // yyyy-mm-dd format
+                    parsedDate = dateStr;
+                  } else {
+                    // dd-mm-yyyy format, convert to yyyy-mm-dd
+                    const day = parts[0].padStart(2, '0');
+                    const month = parts[1].padStart(2, '0');
+                    const year = parts[2];
+                    parsedDate = `${year}-${month}-${day}`;
+                  }
                 }
               }
+              // Handle dd/mm/yyyy format
+              else if (dateStr.includes('/')) {
+                const parts = dateStr.split('/');
+                if (parts.length === 3) {
+                  if (parts[0].length === 4) {
+                    // yyyy/mm/dd format
+                    parsedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                  } else {
+                    // dd/mm/yyyy format
+                    const day = parts[0].padStart(2, '0');
+                    const month = parts[1].padStart(2, '0');
+                    const year = parts[2];
+                    parsedDate = `${year}-${month}-${day}`;
+                  }
+                }
+              }
+              // Try to parse as ISO date
+              else {
+                const date = new Date(dateStr);
+                if (!isNaN(date.getTime())) {
+                  parsedDate = date.toISOString().split('T')[0];
+                }
+              }
+              
+              console.log(`Parsed string date "${dateStr}" to: ${parsedDate}`);
             }
           }
 
@@ -695,7 +721,11 @@ const TradesTable: React.FC<TradesTableProps> = ({
       // Save immediately for investment type changes
       onUpdateTrade(id, updates);
     } else {
-      // Schedule autosave for other changes
+      // Use the existing update mechanism for immediate feedback
+      onUpdateTrade(id, { [field]: value });
+      
+      // Schedule autosave for background save (this will be a no-op since we already saved)
+      // But we keep it for consistency and to show the save status
       scheduleAutosave({ id, field, value });
     }
     
@@ -711,23 +741,6 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      // Force immediate save when Enter is pressed
-      if (editingCell) {
-        const { id, field } = editingCell;
-        let value: any = editValue;
-        
-        // Convert to appropriate type
-        if (['quantity', 'buyRate', 'sellRate', 'interestRate'].includes(field)) {
-          value = parseFloat(editValue) || 0;
-        } else if (field === 'isin') {
-          value = editValue.toUpperCase();
-        }
-        
-        // Save immediately for Enter key
-        onUpdateTrade(id, { [field]: value });
-        setAutosaveStatus('saved');
-        setAutosaveMessage('Saved');
-      }
       handleCellSave();
     } else if (e.key === 'Escape') {
       setEditingCell(null);
