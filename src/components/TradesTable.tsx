@@ -5,6 +5,7 @@ import { getMutualFundService } from '../services/mutualFundApi';
 import { getStockPriceService } from '../services/stockPriceService';
 import { navService, MutualFundData } from '../services/navService';
 import StockSuggestionDropdown from './StockSuggestionDropdown';
+import AddInvestmentModal from './AddInvestmentModal';
 import * as XLSX from 'xlsx';
 
 interface TradesTableProps {
@@ -47,6 +48,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   });
 
   const [resizing, setResizing] = useState<{ column: string; startX: number; startWidth: number } | null>(null);
+  const [showAddInvestmentModal, setShowAddInvestmentModal] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -439,7 +441,11 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
           const transactionTypeMap: { [key: string]: 'buy' | 'sell' } = {
             'BUY': 'buy',
-            'SELL': 'sell'
+            'SELL': 'sell',
+            'Buy': 'buy',
+            'Sell': 'sell',
+            'buy': 'buy',
+            'sell': 'sell'
           };
 
           const bucketMap: { [key: string]: string } = {
@@ -455,7 +461,12 @@ const TradesTable: React.FC<TradesTableProps> = ({
           const investmentTypeValue = row['Investment Type'];
           const mappedInvestmentType: 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf' = 
             (investmentTypeMap[investmentTypeValue] as 'stock' | 'mutual_fund' | 'bond' | 'fixed_deposit' | 'gold' | 'silver' | 'nps' | 'etf') || 'stock';
-          const mappedTransactionType = transactionTypeMap[row['Buy/Sell']] || 'buy';
+          
+          // Debug transaction type mapping
+          const rawTransactionType = row['Buy/Sell'];
+          console.log(`Raw transaction type: "${rawTransactionType}", type: ${typeof rawTransactionType}`);
+          const mappedTransactionType = transactionTypeMap[rawTransactionType] || 'buy';
+          console.log(`Mapped transaction type: ${mappedTransactionType}`);
 
           // Parse date - handle Excel date objects and various string formats
           let parsedDate = new Date().toISOString().split('T')[0]; // Default to today
@@ -525,7 +536,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
             }
           }
 
-          return {
+          const tradeObject = {
             id: `imported-${Date.now()}-${index}`,
             date: parsedDate,
             investmentType: mappedInvestmentType,
@@ -539,6 +550,9 @@ const TradesTable: React.FC<TradesTableProps> = ({
             brokerBank: row['Broker/Bank'] || '',
             bucketAllocation: bucketMap[row['Bucket Allocation']] || ''
           };
+          
+          console.log(`Created trade object for row ${index}:`, tradeObject);
+          return tradeObject;
         });
 
         // Validate imported trades - allow blank names for mutual funds and be more lenient
@@ -674,7 +688,10 @@ const TradesTable: React.FC<TradesTableProps> = ({
   };
 
   const handleCellClick = (id: string, field: string, currentValue: any) => {
+    console.log(`Cell click: ${field} for trade ${id}, value: ${currentValue}, type: ${typeof currentValue}`);
+    
     if (field === 'buyAmount' || (field === 'name' && trades.find(t => t.id === id)?.investmentType === 'mutual_fund')) {
+      console.log(`Cell ${field} is read-only for trade ${id}`);
       return; // This is a calculated field
     }
     
@@ -688,7 +705,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
     setEditingCell({ id, field });
     setEditValue(currentValue?.toString() || '');
     
-    console.log(`Editing cell: ${field} for trade ${id}, value: ${currentValue}`);
+    console.log(`Started editing cell: ${field} for trade ${id}, value: ${currentValue}`);
   };
 
   const handleCellSave = () => {
@@ -1096,6 +1113,14 @@ const TradesTable: React.FC<TradesTableProps> = ({
         
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setShowAddInvestmentModal(true)}
+            className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            <Plus size={14} />
+            Add New Investment
+          </button>
+          
+          <button
             onClick={exportData}
             className="flex items-center gap-1 px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors"
           >
@@ -1288,6 +1313,13 @@ const TradesTable: React.FC<TradesTableProps> = ({
           </div>
         </div>
       </div>
+      
+      {/* Add Investment Modal */}
+      <AddInvestmentModal
+        isOpen={showAddInvestmentModal}
+        onClose={() => setShowAddInvestmentModal(false)}
+        onAddTrade={onAddTrade}
+      />
     </div>
   );
 };
