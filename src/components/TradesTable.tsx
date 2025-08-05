@@ -157,6 +157,12 @@ const TradesTable: React.FC<TradesTableProps> = ({
   };
 
   const handleSelectTrade = (tradeId: string) => {
+    // Validate tradeId
+    if (!tradeId || typeof tradeId !== 'string') {
+      console.error('Invalid trade ID:', tradeId);
+      return;
+    }
+    
     const newSelected = new Set(selectedTrades);
     if (newSelected.has(tradeId)) {
       newSelected.delete(tradeId);
@@ -652,9 +658,9 @@ const TradesTable: React.FC<TradesTableProps> = ({
           {/* Scrollable Data Rows */}
           <div className="overflow-y-auto" style={{ maxHeight: 'calc(70vh - 80px)' }}>
             {/* Data Rows */}
-            {sortTrades(trades).map((trade: Trade) => (
+            {sortTrades(trades).map((trade: Trade, index: number) => (
               <div 
-                key={trade.id} 
+                key={`${trade.id}-${index}`}
                 className="flex hover:bg-gray-50 relative group"
                 onMouseEnter={() => setHoveredRow(trade.id)}
                 onMouseLeave={() => setHoveredRow(null)}
