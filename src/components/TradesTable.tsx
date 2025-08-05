@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { Trade } from '../types/portfolio';
-import { Trash2, Plus, Download, Upload, Loader, FileText } from 'lucide-react';
+import { Trash2, Plus, Download, Upload, Loader, FileText, Edit } from 'lucide-react';
 import { getMutualFundService } from '../services/mutualFundApi';
 import { getStockPriceService } from '../services/stockPriceService';
 import { navService, MutualFundData } from '../services/navService';
 import StockSuggestionDropdown from './StockSuggestionDropdown';
 import AddInvestmentModal from './AddInvestmentModal';
+import EditInvestmentModal from './EditInvestmentModal';
 import * as XLSX from 'xlsx';
 
 interface TradesTableProps {
@@ -25,8 +26,8 @@ const TradesTable: React.FC<TradesTableProps> = ({
   onDeleteAllTrades,
   updatePriceCacheWithNAV
 }) => {
-  const [editingCell, setEditingCell] = useState<{ id: string; field: string } | null>(null);
-  const [editValue, setEditValue] = useState<string>('');
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [isinLookupResult, setIsinLookupResult] = useState<{ schemeName: string; nav: number } | null>(null);
   const [isinError, setIsinError] = useState<string>('');
   const [isLoadingName, setIsLoadingName] = useState<{ [key: string]: boolean }>({});
@@ -690,92 +691,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
     onAddTrade(newTrade);
   };
 
-  const handleCellClick = (id: string, field: string, currentValue: any) => {
-    const trade = trades.find(t => t.id === id);
-    console.log(`Cell click: ${field} for trade ${id}, value: ${currentValue}, type: ${typeof currentValue}, investmentType: ${trade?.investmentType}`);
-    
-    if (field === 'buyAmount') {
-      console.log(`Cell ${field} is read-only for trade ${id}`);
-      return; // This is a calculated field
-    }
-    
-    // Prevent editing name field for mutual funds (names are auto-populated from ISIN)
-    if (field === 'name' && trades.find(t => t.id === id)?.investmentType === 'mutual_fund') {
-      console.log(`Name field is read-only for mutual fund trade ${id}`);
-      return;
-    }
-    
-    // Reset ISIN lookup state when editing ISIN
-    if (field === 'isin') {
-      setIsinLookupResult(null);
-      setIsinError('');
-    }
-    
-    // Set editing cell and value
-    setEditingCell({ id, field });
-    setEditValue(currentValue?.toString() || '');
-    
-    console.log(`Started editing cell: ${field} for trade ${id}, value: ${currentValue}`);
-  };
-
-  const handleCellSave = () => {
-    if (!editingCell) return;
-    
-    const { id, field } = editingCell;
-    console.log(`Cell edit completed: ${field} for trade ${id}, value: ${editValue}`);
-    
-    let value: any = editValue;
-    
-    // Convert to appropriate type
-    if (['quantity', 'buyRate', 'sellRate', 'interestRate'].includes(field)) {
-      value = parseFloat(editValue) || 0;
-    } else if (field === 'isin') {
-      value = editValue.toUpperCase();
-    }
-    
-    // Handle special cases that need immediate save (investment type changes)
-    if (field === 'investmentType') {
-      let updates: any = { [field]: value };
-      
-      if (value === 'gold') {
-        updates.name = '24 carats Gold in gms';
-      } else if (value === 'silver') {
-        updates.name = 'Silver in Kgs';
-      } else {
-        updates.name = '';
-      }
-      
-      // Save immediately for investment type changes
-      onUpdateTrade(id, updates);
-    } else {
-      // Use the existing update mechanism for immediate feedback
-      onUpdateTrade(id, { [field]: value });
-      
-      // Schedule autosave for background save (this will be a no-op since we already saved)
-      // But we keep it for consistency and to show the save status
-      scheduleAutosave({ id, field, value });
-    }
-    
-    setEditingCell(null);
-    setEditValue('');
-    
-    // Clear ISIN lookup state when done editing
-    if (field !== 'isin') {
-      setIsinLookupResult(null);
-      setIsinError('');
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleCellSave();
-    } else if (e.key === 'Escape') {
-      setEditingCell(null);
-      setEditValue('');
-      setIsinLookupResult(null);
-      setIsinError('');
-    }
-  };
+  // Removed inline editing functions - now using modal-based editing
 
   const handleMouseDown = (e: React.MouseEvent, column: string) => {
     e.preventDefault();
@@ -841,16 +757,19 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
   // Handle column sorting
   const handleSort = (field: string) => {
+    console.log('Sorting field:', field, 'Current sortField:', sortField, 'Current direction:', sortDirection);
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
       setSortDirection('asc');
     }
+    console.log('New sortField:', field, 'New direction:', sortField === field ? (sortDirection === 'asc' ? 'desc' : 'asc') : 'asc');
   };
 
   // Checkbox selection functions
   const handleSelectAll = () => {
+    console.log('Select all clicked. Current selected:', selectedTrades.size, 'Total trades:', trades.length);
     if (selectedTrades.size === trades.length) {
       setSelectedTrades(new Set());
     } else {
@@ -859,6 +778,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   };
 
   const handleSelectTrade = (tradeId: string) => {
+    console.log('Select trade clicked:', tradeId, 'Currently selected:', selectedTrades.has(tradeId));
     const newSelected = new Set(selectedTrades);
     if (newSelected.has(tradeId)) {
       newSelected.delete(tradeId);
@@ -879,6 +799,26 @@ const TradesTable: React.FC<TradesTableProps> = ({
     }
   };
 
+  const handleEditTrade = (trade: Trade) => {
+    setEditingTrade(trade);
+  };
+
+  const handleDeleteTrade = async (tradeId: string) => {
+    if (window.confirm('Are you sure you want to delete this trade?')) {
+      await onDeleteTrade(tradeId);
+    }
+  };
+
+  const handleBulkEdit = () => {
+    if (selectedTrades.size === 1) {
+      const tradeId = Array.from(selectedTrades)[0];
+      const trade = trades.find(t => t.id === tradeId);
+      if (trade) {
+        setEditingTrade(trade);
+      }
+    }
+  };
+
   const totals = trades.reduce((acc, trade) => {
     const amount = trade.buyAmount;
     if (trade.transactionType === 'buy') {
@@ -895,33 +835,12 @@ const TradesTable: React.FC<TradesTableProps> = ({
   };
 
   const renderBucketCell = (trade: Trade) => {
-    const isEditing = editingCell?.id === trade.id && editingCell?.field === 'bucketAllocation';
-    const cellClass = "min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white hover:bg-blue-50 cursor-pointer flex items-center";
-
-    if (isEditing) {
-      return (
-        <div className="min-h-8 px-1 py-1 border-r border-b border-gray-300 bg-white" style={{ width: columnWidths.bucketAllocation, height: 'auto' }}>
-          <select
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={handleCellSave}
-            onKeyDown={handleKeyPress}
-            className="w-full min-h-6 text-xs border-none outline-none bg-white"
-            autoFocus
-          >
-            {bucketOptions.map(option => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </div>
-      );
-    }
-
+    const readOnlyClass = "min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white flex items-center";
+    
     return (
       <div 
-        className={cellClass}
+        className={readOnlyClass}
         style={{ width: columnWidths.bucketAllocation, height: 'auto' }}
-        onClick={() => handleCellClick(trade.id, 'bucketAllocation', trade.bucketAllocation)}
       >
         {getBucketDisplayValue(trade.bucketAllocation)}
       </div>
@@ -929,20 +848,34 @@ const TradesTable: React.FC<TradesTableProps> = ({
   };
 
   const renderCell = (trade: Trade, field: string, value: any, isEditable: boolean = true) => {
-    const isEditing = editingCell?.id === trade.id && editingCell?.field === field;
-    const cellClass = "min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white hover:bg-blue-50 cursor-pointer flex items-center";
-    const readOnlyClass = "min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-gray-50 flex items-center";
-    const disabledClass = "min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-gray-100 text-gray-400 flex items-center";
+    const isMutualFund = trade.investmentType === 'mutual_fund';
+    const readOnlyClass = "min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white flex items-center";
 
-    if (!isEditable) {
+    if (field === 'date') {
       return (
         <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
-          {field === 'buyAmount' ? formatCurrency(value) : value}
+          {new Date(value).toLocaleDateString('en-GB')}
         </div>
       );
     }
-    
-    // Special handling for buyAmount field to show sell amounts in red
+
+    if (field === 'investmentType') {
+      const typeLabel = investmentTypes.find(type => type.value === value)?.label || value;
+      return (
+        <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
+          {typeLabel}
+        </div>
+      );
+    }
+
+    if (field === 'name') {
+      return (
+        <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
+          <span className={isMutualFund ? 'text-blue-600' : ''}>{value || ''}</span>
+        </div>
+      );
+    }
+
     if (field === 'buyAmount') {
       const isSell = trade.transactionType === 'sell';
       const textColor = isSell ? 'text-red-600' : 'text-gray-900';
@@ -952,80 +885,48 @@ const TradesTable: React.FC<TradesTableProps> = ({
         </div>
       );
     }
-    
-    // Special handling for ISIN field
-    if (field === 'isin' && trade.investmentType !== 'mutual_fund') {
+
+    if (field === 'transactionType') {
       return (
-        <div className={disabledClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
-          -
+        <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
+          <span className={`capitalize ${trade.transactionType === 'sell' ? 'text-red-600' : 'text-gray-900'}`}>
+            {value}
+          </span>
         </div>
       );
     }
-    
-    // Special handling for ISIN field when mutual fund is selected but field is not being edited
-    if (field === 'isin' && trade.investmentType === 'mutual_fund' && !isEditing) {
+
+    if (field === 'interestRate') {
       return (
-        <div 
-          className={cellClass}
-          style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}
-          onClick={() => handleCellClick(trade.id, field, value)}
-        >
-          {value || 'Click to enter ISIN'}
+        <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
+          {value ? `${value}%` : ''}
         </div>
       );
     }
-    
-    // Special handling for name field
-    if (field === 'name') {
-      const isLoading = isLoadingName[trade.id];
-      const isMutualFund = trade.investmentType === 'mutual_fund';
-      const isStock = trade.investmentType === 'stock';
-      const suggestionData = stockSuggestions[trade.id];
-      
+
+    if (field === 'buyRate') {
       return (
-        <div className="relative min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white hover:bg-blue-50 cursor-pointer flex items-center"
-             style={{ width: columnWidths[field], height: 'auto' }}
-             onClick={() => handleCellClick(trade.id, field, value)}>
-          {isLoading ? (
-            <div className="flex items-center gap-2">
-              <Loader className="w-3 h-3 animate-spin text-blue-500" />
-              <span className="text-gray-500">Fetching...</span>
-            </div>
-          ) : (
-            isEditing ? (
-              <div className="relative w-full">
-                <input
-                  type="text"
-                  value={editValue}
-                  onChange={(e) => {
-                    setEditValue(e.target.value);
-                    if (isStock) {
-                      handleStockNameInput(e.target.value, trade.id);
-                    }
-                  }}
-                  onBlur={handleCellSave}
-                  onKeyDown={handleKeyPress}
-                  className="w-full min-h-6 text-xs border-none outline-none bg-white"
-                  autoFocus
-                />
-                
-                {/* Stock suggestions dropdown */}
-                {isStock && suggestionData && (
-                  <StockSuggestionDropdown
-                    query={suggestionData.query}
-                    isVisible={suggestionData.isVisible}
-                    onSelect={(suggestion) => handleStockSuggestionSelect(trade.id, suggestion)}
-                    onClose={() => closeStockSuggestions(trade.id)}
-                  />
-                )}
-              </div>
-            ) : (
-              <span className={isMutualFund ? 'text-blue-600' : ''}>{value || ''}</span>
-            )
-          )}
+        <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
+          {formatCurrency(value)}
         </div>
       );
     }
+
+    if (field === 'quantity') {
+      return (
+        <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
+          {value.toFixed(2)}
+        </div>
+      );
+    }
+
+    // Default case for other fields
+    return (
+      <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
+        {value || ''}
+      </div>
+    );
+  };
 
     if (isEditing) {
       if (field === 'investmentType') {
@@ -1157,7 +1058,10 @@ const TradesTable: React.FC<TradesTableProps> = ({
     >
       <span 
         className={sortable ? 'cursor-pointer hover:text-blue-600 flex items-center gap-1' : ''}
-        onClick={sortable ? () => handleSort(field) : undefined}
+        onClick={sortable ? (e) => {
+          e.stopPropagation();
+          handleSort(field);
+        } : undefined}
       >
         {label}
         {sortable && sortField === field && (
@@ -1242,13 +1146,24 @@ const TradesTable: React.FC<TradesTableProps> = ({
           </button>
           
           {selectedTrades.size > 0 && (
-            <button
-              onClick={handleBulkDelete}
-              className="flex items-center gap-1 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
-            >
-              <Trash2 size={10} />
-              Delete Selected ({selectedTrades.size})
-            </button>
+            <>
+              {selectedTrades.size === 1 && (
+                <button
+                  onClick={handleBulkEdit}
+                  className="flex items-center gap-1 px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 transition-colors"
+                >
+                  <Edit size={10} />
+                  Edit Selected
+                </button>
+              )}
+              <button
+                onClick={handleBulkDelete}
+                className="flex items-center gap-1 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
+              >
+                <Trash2 size={10} />
+                Delete Selected ({selectedTrades.size})
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1278,7 +1193,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
                   type="checkbox"
                   checked={selectedTrades.size === trades.length && trades.length > 0}
                   onChange={handleSelectAll}
-                  className="w-3 h-3 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-3 h-3 bg-white border-gray-300 rounded focus:ring-blue-500 focus:ring-2 checked:bg-blue-600 checked:border-blue-600"
                 />
               </div>
               {renderHeaderCell('Date', 'date', true)}
@@ -1315,14 +1230,19 @@ const TradesTable: React.FC<TradesTableProps> = ({
           <div className="overflow-y-auto" style={{ maxHeight: 'calc(70vh - 80px)' }}>
             {/* Data Rows */}
           {sortTrades(trades).map((trade) => (
-            <div key={trade.id} className="flex hover:bg-gray-50">
+            <div 
+              key={trade.id} 
+              className="flex hover:bg-gray-50 relative group"
+              onMouseEnter={() => setHoveredRow(trade.id)}
+              onMouseLeave={() => setHoveredRow(null)}
+            >
               <div className="min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white flex items-center justify-center"
                    style={{ width: columnWidths.checkbox }}>
                 <input
                   type="checkbox"
                   checked={selectedTrades.has(trade.id)}
                   onChange={() => handleSelectTrade(trade.id)}
-                  className="w-3 h-3 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-3 h-3 bg-white border-gray-300 rounded focus:ring-blue-500 focus:ring-2 checked:bg-blue-600 checked:border-blue-600"
                 />
               </div>
               {renderCell(trade, 'date', trade.date)}
@@ -1331,100 +1251,53 @@ const TradesTable: React.FC<TradesTableProps> = ({
               {renderCell(trade, 'name', trade.name)}
               {renderCell(trade, 'interestRate', trade.interestRate || 0, ['bond', 'fixed_deposit'].includes(trade.investmentType))}
               {renderCell(trade, 'transactionType', trade.transactionType)}
-              <div className="min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white hover:bg-blue-50 cursor-pointer flex items-center justify-end"
-                   style={{ width: columnWidths.quantity, height: 'auto' }}
-                   onClick={() => handleCellClick(trade.id, 'quantity', trade.quantity)}>
-                {editingCell?.id === trade.id && editingCell?.field === 'quantity' ? (
-                  <input
-                    type="number"
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onBlur={handleCellSave}
-                    onKeyDown={handleKeyPress}
-                    className="w-full min-h-6 text-xs border-none outline-none bg-white text-right"
-                    autoFocus
-                    step="0.01"
-                  />
-                ) : (
-                  trade.quantity.toFixed(2)
-                )}
-              </div>
-              <div className="min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white hover:bg-blue-50 cursor-pointer flex items-center justify-end"
-                   style={{ width: columnWidths.buyRate, height: 'auto' }}
-                   onClick={() => handleCellClick(trade.id, 'buyRate', trade.buyRate)}>
-                {editingCell?.id === trade.id && editingCell?.field === 'buyRate' ? (
-                  <input
-                    type="number"
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onBlur={handleCellSave}
-                    onKeyDown={handleKeyPress}
-                    className="w-full min-h-6 text-xs border-none outline-none bg-white text-right"
-                    autoFocus
-                    step="0.01"
-                  />
-                ) : (
-                  `₹${trade.buyRate.toFixed(2)}`
-                )}
-              </div>
+              {renderCell(trade, 'quantity', trade.quantity)}
+              {renderCell(trade, 'buyRate', trade.buyRate)}
               {renderCell(trade, 'buyAmount', trade.buyAmount, false)}
               {renderCell(trade, 'brokerBank', trade.brokerBank)}
               {renderBucketCell(trade)}
+              
+              {/* Hover Actions */}
+              {hoveredRow === trade.id && (
+                <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1 bg-white border border-gray-300 rounded-md shadow-lg px-2 py-1">
+                  <button
+                    onClick={() => handleEditTrade(trade)}
+                    className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                    title="Edit"
+                  >
+                    <Edit size={12} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteTrade(trade.id)}
+                    className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
           </div>
         </div>
       </div>
       
-      {/* ISIN Instructions */}
-      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-start gap-2">
-          <div className="text-blue-600 mt-0.5">ℹ️</div>
-          <div className="text-xs text-blue-800">
-            <div className="font-medium mb-1">ISIN Number Instructions:</div>
-            <div className="mb-2">
-              Enter the 12-character ISIN number for mutual funds (e.g., INF209KA12Z1). 
-              The scheme name will be auto-populated once a valid ISIN is entered.
-            </div>
-            <div className="mb-2">
-              <div className="font-medium mb-1">How to find your ISIN number:</div>
-              <div className="mb-1">
-                Use our simple lookup page to search for ISIN numbers by mutual fund name.
-              </div>
-              <div className="mb-2">
-                All ISIN codes are listed with their corresponding schemes for your convenience.
-              </div>
-              <div className="mb-2">
-                <a 
-                  href="https://docs.google.com/spreadsheets/d/e/2PACX-1vRxCnHMu-PJUT_yp_rOfESXJ-mf7wDu0kEhEcWqAOWF0er8zEEEp3AabmRy-1yJIT2d8h-2nSckaNiU/pubhtml?gid=634852302&single=true" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 underline"
-                >
-                  View Mutual Fund ISIN Numbers
-                </a>
-              </div>
-            </div>
-            <div>
-              If you prefer, you can still use the official resource:
-              <a 
-                href="https://www.amfiindia.com/net-asset-value/nav-search" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 underline ml-1"
-              >
-                AMFI NAV Search (Official)
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
+
       
       {/* Add Investment Modal */}
       <AddInvestmentModal
         isOpen={showAddInvestmentModal}
         onClose={() => setShowAddInvestmentModal(false)}
         onAddTrade={onAddTrade}
+        existingTrades={trades}
+      />
+      
+      {/* Edit Investment Modal */}
+      <EditInvestmentModal
+        isOpen={editingTrade !== null}
+        onClose={() => setEditingTrade(null)}
+        onUpdateTrade={onUpdateTrade}
+        trade={editingTrade}
         existingTrades={trades}
       />
     </div>
