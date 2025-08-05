@@ -166,11 +166,13 @@ const TradesTable: React.FC<TradesTableProps> = ({
     setSelectedTrades(newSelected);
   };
 
-  // Clear selected trades when trades array changes
+  // Clear selected trades when trades array changes (only if trades are actually removed)
   useEffect(() => {
     const currentTradeIds = new Set(trades.map(t => t.id));
     const validSelectedIds = Array.from(selectedTrades).filter(id => currentTradeIds.has(id));
-    if (validSelectedIds.length !== selectedTrades.size) {
+    
+    // Only update if we actually lost some selected trades
+    if (validSelectedIds.length < selectedTrades.size) {
       setSelectedTrades(new Set(validSelectedIds));
     }
   }, [trades]);

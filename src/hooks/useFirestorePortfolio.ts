@@ -728,6 +728,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     
     if (filters.search && filters.search.trim()) {
       const searchLower = filters.search.toLowerCase().trim();
+      console.log('Searching trades for:', searchLower, 'in', filtered.length, 'trades');
       
       filtered = filtered.filter(trade => {
         // Search in name
