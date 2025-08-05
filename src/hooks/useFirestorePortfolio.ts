@@ -728,44 +728,79 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     
     if (filters.search && filters.search.trim()) {
       const searchLower = filters.search.toLowerCase().trim();
-      console.log('Searching for:', searchLower, 'in', filtered.length, 'trades');
+      console.log('Searching trades for:', searchLower, 'in', filtered.length, 'trades');
       
       filtered = filtered.filter(trade => {
         // Search in name
-        if (trade.name.toLowerCase().includes(searchLower)) return true;
+        if (trade.name && trade.name.toLowerCase().includes(searchLower)) {
+          console.log('Match found in name:', trade.name);
+          return true;
+        }
         
         // Search in ISIN
-        if (trade.isin && trade.isin.toLowerCase().includes(searchLower)) return true;
+        if (trade.isin && trade.isin.toLowerCase().includes(searchLower)) {
+          console.log('Match found in ISIN:', trade.isin);
+          return true;
+        }
         
         // Search in broker/bank
-        if (trade.brokerBank.toLowerCase().includes(searchLower)) return true;
+        if (trade.brokerBank && trade.brokerBank.toLowerCase().includes(searchLower)) {
+          console.log('Match found in broker/bank:', trade.brokerBank);
+          return true;
+        }
         
         // Search in investment type
-        if (trade.investmentType.toLowerCase().includes(searchLower)) return true;
+        if (trade.investmentType && trade.investmentType.toLowerCase().includes(searchLower)) {
+          console.log('Match found in investment type:', trade.investmentType);
+          return true;
+        }
         
         // Search in transaction type
-        if (trade.transactionType.toLowerCase().includes(searchLower)) return true;
+        if (trade.transactionType && trade.transactionType.toLowerCase().includes(searchLower)) {
+          console.log('Match found in transaction type:', trade.transactionType);
+          return true;
+        }
         
         // Search in bucket allocation
-        if (trade.bucketAllocation.toLowerCase().includes(searchLower)) return true;
+        if (trade.bucketAllocation && trade.bucketAllocation.toLowerCase().includes(searchLower)) {
+          console.log('Match found in bucket allocation:', trade.bucketAllocation);
+          return true;
+        }
         
         // Search in date
-        if (trade.date.toLowerCase().includes(searchLower)) return true;
+        if (trade.date && trade.date.toLowerCase().includes(searchLower)) {
+          console.log('Match found in date:', trade.date);
+          return true;
+        }
         
         // Search in quantity (as string)
-        if (trade.quantity.toString().includes(searchLower)) return true;
+        if (trade.quantity && trade.quantity.toString().includes(searchLower)) {
+          console.log('Match found in quantity:', trade.quantity);
+          return true;
+        }
         
         // Search in buy rate (as string)
-        if (trade.buyRate.toString().includes(searchLower)) return true;
+        if (trade.buyRate && trade.buyRate.toString().includes(searchLower)) {
+          console.log('Match found in buy rate:', trade.buyRate);
+          return true;
+        }
         
         // Search in buy amount (as string)
-        if (trade.buyAmount.toString().includes(searchLower)) return true;
+        if (trade.buyAmount && trade.buyAmount.toString().includes(searchLower)) {
+          console.log('Match found in buy amount:', trade.buyAmount);
+          return true;
+        }
         
         // Search in interest rate (as string)
-        if (trade.interestRate && trade.interestRate.toString().includes(searchLower)) return true;
+        if (trade.interestRate && trade.interestRate.toString().includes(searchLower)) {
+          console.log('Match found in interest rate:', trade.interestRate);
+          return true;
+        }
         
         return false;
       });
+      
+      console.log('After search filtering:', filtered.length, 'trades remain');
     }
     
     if (filters.dateFrom) {

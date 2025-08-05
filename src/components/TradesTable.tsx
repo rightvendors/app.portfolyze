@@ -37,7 +37,6 @@ const TradesTable: React.FC<TradesTableProps> = ({
     checkbox: 40,
     date: 120,
     investmentType: 140,
-    isin: 140,
     name: 180,
     interestRate: 100,
     transactionType: 100,
@@ -758,7 +757,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   // Checkbox selection functions
   const handleSelectAll = () => {
     console.log('Select all clicked. Current selected:', selectedTrades.size, 'Total trades:', trades.length);
-    if (selectedTrades.size === trades.length) {
+    if (selectedTrades.size === trades.length && trades.length > 0) {
       setSelectedTrades(new Set());
     } else {
       setSelectedTrades(new Set(trades.map(t => t.id)));
@@ -775,6 +774,15 @@ const TradesTable: React.FC<TradesTableProps> = ({
     }
     setSelectedTrades(newSelected);
   };
+
+  // Clear selected trades when trades array changes (e.g., due to filtering)
+  useEffect(() => {
+    const currentTradeIds = new Set(trades.map(t => t.id));
+    const validSelectedIds = Array.from(selectedTrades).filter(id => currentTradeIds.has(id));
+    if (validSelectedIds.length !== selectedTrades.size) {
+      setSelectedTrades(new Set(validSelectedIds));
+    }
+  }, [trades, selectedTrades]);
 
   const handleBulkDelete = async () => {
     if (selectedTrades.size === 0) return;
@@ -1063,7 +1071,6 @@ const TradesTable: React.FC<TradesTableProps> = ({
               </div>
               {renderHeaderCell('Date', 'date', true)}
               {renderHeaderCell('Investment Type', 'investmentType', true)}
-              {renderHeaderCell('ISIN Number', 'isin')}
               {renderHeaderCell('Name', 'name', true)}
               {renderHeaderCell('Interest %', 'interestRate')}
               {renderHeaderCell('Buy/Sell', 'transactionType')}
@@ -1080,7 +1087,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
                    style={{ width: columnWidths.checkbox }}>
               </div>
               <div className="h-8 px-2 text-xs font-bold text-gray-700 border-r border-gray-300 flex items-center" 
-                   style={{ width: columnWidths.date + columnWidths.investmentType + columnWidths.isin + columnWidths.name + columnWidths.interestRate + columnWidths.transactionType + columnWidths.quantity + columnWidths.buyRate }}>
+                   style={{ width: columnWidths.date + columnWidths.investmentType + columnWidths.name + columnWidths.interestRate + columnWidths.transactionType + columnWidths.quantity + columnWidths.buyRate }}>
                 TOTALS
               </div>
               <div className={`h-8 px-2 text-xs font-bold border-r border-gray-300 flex items-center ${totals.buyAmount >= 0 ? 'text-blue-600' : 'text-red-600'}`} style={{ width: columnWidths.buyAmount }}>
@@ -1112,7 +1119,6 @@ const TradesTable: React.FC<TradesTableProps> = ({
               </div>
               {renderCell(trade, 'date', trade.date)}
               {renderCell(trade, 'investmentType', trade.investmentType)}
-              {renderCell(trade, 'isin', trade.isin || '')}
               {renderCell(trade, 'name', trade.name)}
               {renderCell(trade, 'interestRate', trade.interestRate || 0, ['bond', 'fixed_deposit'].includes(trade.investmentType))}
               {renderCell(trade, 'transactionType', trade.transactionType)}
