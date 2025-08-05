@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Trade } from '../types/portfolio';
 import { Trash2, Plus, Download, Upload, Loader, FileText, Edit } from 'lucide-react';
 import { getMutualFundService } from '../services/mutualFundApi';
