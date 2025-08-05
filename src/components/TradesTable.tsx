@@ -25,7 +25,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   // State management
   const [showAddInvestmentModal, setShowAddInvestmentModal] = useState(false);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
-  const [selectedTrades, setSelectedTrades] = useState<Set<string>>(new Set());
+  const [selectedTrades, setSelectedTrades] = useState<Set<number>>(new Set());
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [sortField, setSortField] = useState<string>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -152,35 +152,30 @@ const TradesTable: React.FC<TradesTableProps> = ({
     if (selectedTrades.size === trades.length && trades.length > 0) {
       setSelectedTrades(new Set());
     } else {
-      setSelectedTrades(new Set(trades.map(t => t.id)));
+      setSelectedTrades(new Set(trades.map((_, index) => index)));
     }
   };
 
-  const handleSelectTrade = (tradeId: string) => {
-    // Validate tradeId
-    if (!tradeId || typeof tradeId !== 'string') {
-      console.error('Invalid trade ID:', tradeId);
+  const handleSelectTrade = (index: number) => {
+    // Validate index
+    if (typeof index !== 'number' || index < 0 || index >= trades.length) {
+      console.error('Invalid trade index:', index);
       return;
     }
     
     const newSelected = new Set(selectedTrades);
-    if (newSelected.has(tradeId)) {
-      newSelected.delete(tradeId);
+    if (newSelected.has(index)) {
+      newSelected.delete(index);
     } else {
-      newSelected.add(tradeId);
+      newSelected.add(index);
     }
     setSelectedTrades(newSelected);
   };
 
   // Clear selected trades when trades array changes (only if trades are actually removed)
   useEffect(() => {
-    const currentTradeIds = new Set(trades.map(t => t.id));
-    const validSelectedIds = Array.from(selectedTrades).filter(id => currentTradeIds.has(id));
-    
-    // Only update if we actually lost some selected trades
-    if (validSelectedIds.length < selectedTrades.size) {
-      setSelectedTrades(new Set(validSelectedIds));
-    }
+    // Reset selection when trades array changes since we're using indices
+    setSelectedTrades(new Set());
   }, [trades]);
 
   // Bulk operations
@@ -188,8 +183,12 @@ const TradesTable: React.FC<TradesTableProps> = ({
     if (selectedTrades.size === 0) return;
     
     if (window.confirm(`Are you sure you want to delete ${selectedTrades.size} selected trade(s)?`)) {
-      for (const tradeId of selectedTrades) {
-        await onDeleteTrade(tradeId);
+      const sortedTrades = sortTrades(trades);
+      for (const index of selectedTrades) {
+        const trade = sortedTrades[index];
+        if (trade) {
+          await onDeleteTrade(trade.id);
+        }
       }
       setSelectedTrades(new Set());
     }
@@ -197,8 +196,9 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
   const handleBulkEdit = () => {
     if (selectedTrades.size === 1) {
-      const tradeId = Array.from(selectedTrades)[0];
-      const trade = trades.find(t => t.id === tradeId);
+      const index = Array.from(selectedTrades)[0];
+      const sortedTrades = sortTrades(trades);
+      const trade = sortedTrades[index];
       if (trade) {
         setEditingTrade(trade);
       }
@@ -669,8 +669,8 @@ const TradesTable: React.FC<TradesTableProps> = ({
                      style={{ width: columnWidths.checkbox }}>
                   <input
                     type="checkbox"
-                    checked={selectedTrades.has(trade.id)}
-                    onChange={() => handleSelectTrade(trade.id)}
+                    checked={selectedTrades.has(index)}
+                    onChange={() => handleSelectTrade(index)}
                     className="w-3 h-3 bg-white border-gray-300 rounded focus:ring-blue-500 focus:ring-2 checked:bg-blue-600 checked:border-blue-600"
                   />
                 </div>
