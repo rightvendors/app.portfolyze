@@ -689,7 +689,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
     });
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
+  const handleMouseMove = React.useCallback((e: MouseEvent) => {
     if (!resizing) return;
     
     const diff = e.clientX - resizing.startX;
@@ -699,11 +699,11 @@ const TradesTable: React.FC<TradesTableProps> = ({
       ...prev,
       [resizing.column]: newWidth
     }));
-  };
+  }, [resizing]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = React.useCallback(() => {
     setResizing(null);
-  };
+  }, []);
 
   React.useEffect(() => {
     if (resizing) {
@@ -714,7 +714,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [resizing]);
+  }, [resizing, handleMouseMove, handleMouseUp]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -782,7 +782,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
     if (validSelectedIds.length !== selectedTrades.size) {
       setSelectedTrades(new Set(validSelectedIds));
     }
-  }, [trades, selectedTrades]);
+  }, [trades]); // Removed selectedTrades from dependencies to prevent infinite loop
 
   const handleBulkDelete = async () => {
     if (selectedTrades.size === 0) return;
@@ -924,7 +924,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
     );
   };
 
-  const renderHeaderCell = (label: string, field: string, sortable: boolean = false) => (
+  const renderHeaderCell = (label: string, field: string, sortable: boolean = false, isLastColumn: boolean = false) => (
     <div 
       className="relative h-8 px-2 text-xs font-medium text-gray-700 bg-gray-100 border-r border-b border-gray-300 flex items-center"
       style={{ width: columnWidths[field as keyof typeof columnWidths] }}
@@ -944,8 +944,12 @@ const TradesTable: React.FC<TradesTableProps> = ({
         )}
       </span>
       <div
-        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-500"
-        onMouseDown={(e) => handleMouseDown(e, field)}
+        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-500 z-10"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleMouseDown(e, field);
+        }}
       />
     </div>
   );
@@ -1078,7 +1082,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
               {renderHeaderCell('Buy Rate', 'buyRate')}
               {renderHeaderCell('Buy Amount', 'buyAmount')}
               {renderHeaderCell('Broker/Bank', 'brokerBank')}
-              {renderHeaderCell('Bucket Allocation', 'bucketAllocation')}
+              {renderHeaderCell('Bucket Allocation', 'bucketAllocation', false, true)}
             </div>
 
                       {/* Totals Row */}
