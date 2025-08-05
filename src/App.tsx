@@ -20,6 +20,7 @@ function Dashboard() {
     trades,
     filteredTrades,
     holdings,
+    filteredHoldings,
     buckets,
     filters,
     loading,
@@ -130,6 +131,8 @@ function Dashboard() {
               filters={filters}
               onFiltersChange={setFilters}
               filterType="holdings"
+              totalRecords={holdings.length}
+              filteredRecords={filteredHoldings.length}
             />
           )}
 
@@ -178,7 +181,7 @@ function Dashboard() {
                 ) : activeTab === 'holdings' ? (
                   <ErrorBoundary>
                     <CurrentHoldingsTable 
-                      holdings={holdings} 
+                      holdings={filteredHoldings} 
                       onRefreshPrices={updateAllPrices}
                       isLoadingPrices={isLoadingPrices}
                     />

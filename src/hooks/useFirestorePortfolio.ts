@@ -132,6 +132,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   
   // Enhanced calculated data states
   const [calculatedHoldings, setCalculatedHoldings] = useState<Holding[]>([]);
+  const [filteredHoldings, setFilteredHoldings] = useState<Holding[]>([]);
   const [calculatedBuckets, setCalculatedBuckets] = useState<BucketSummary[]>([]);
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
   
@@ -147,6 +148,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     minValue: undefined,
     maxValue: undefined
   });
+
+
 
   // Enhanced price cache with retry logic and error tracking
   const [priceCache, setPriceCache] = useState<{ [key: string]: PriceCacheEntry }>({});
@@ -723,21 +726,46 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       filtered = filtered.filter(trade => trade.transactionType === filters.transactionType);
     }
     
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(trade => 
-        trade.name.toLowerCase().includes(searchLower) ||
-        (trade.isin && trade.isin.toLowerCase().includes(searchLower)) ||
-        trade.brokerBank.toLowerCase().includes(searchLower) ||
-        trade.investmentType.toLowerCase().includes(searchLower) ||
-        trade.transactionType.toLowerCase().includes(searchLower) ||
-        trade.bucketAllocation.toLowerCase().includes(searchLower) ||
-        trade.date.toLowerCase().includes(searchLower) ||
-        trade.quantity.toString().includes(searchLower) ||
-        trade.buyRate.toString().includes(searchLower) ||
-        trade.buyAmount.toString().includes(searchLower) ||
-        (trade.interestRate && trade.interestRate.toString().includes(searchLower))
-      );
+    if (filters.search && filters.search.trim()) {
+      const searchLower = filters.search.toLowerCase().trim();
+      console.log('Searching for:', searchLower, 'in', filtered.length, 'trades');
+      
+      filtered = filtered.filter(trade => {
+        // Search in name
+        if (trade.name.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in ISIN
+        if (trade.isin && trade.isin.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in broker/bank
+        if (trade.brokerBank.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in investment type
+        if (trade.investmentType.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in transaction type
+        if (trade.transactionType.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in bucket allocation
+        if (trade.bucketAllocation.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in date
+        if (trade.date.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in quantity (as string)
+        if (trade.quantity.toString().includes(searchLower)) return true;
+        
+        // Search in buy rate (as string)
+        if (trade.buyRate.toString().includes(searchLower)) return true;
+        
+        // Search in buy amount (as string)
+        if (trade.buyAmount.toString().includes(searchLower)) return true;
+        
+        // Search in interest rate (as string)
+        if (trade.interestRate && trade.interestRate.toString().includes(searchLower)) return true;
+        
+        return false;
+      });
     }
     
     if (filters.dateFrom) {
@@ -758,6 +786,78 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     
     setFilteredTrades(filtered);
   }, [trades, filters]);
+
+  // Holdings filtering
+  useEffect(() => {
+    let filtered = calculatedHoldings;
+    
+    if (filters.investmentType) {
+      filtered = filtered.filter(holding => holding.investmentType === filters.investmentType);
+    }
+    
+    if (filters.assetType) {
+      filtered = filtered.filter(holding => holding.investmentType === filters.assetType);
+    }
+    
+    if (filters.buckets) {
+      filtered = filtered.filter(holding => holding.bucketAllocation === filters.buckets);
+    }
+    
+    if (filters.search && filters.search.trim()) {
+      const searchLower = filters.search.toLowerCase().trim();
+      console.log('Searching holdings for:', searchLower, 'in', filtered.length, 'holdings');
+      
+      filtered = filtered.filter(holding => {
+        // Search in name
+        if (holding.name.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in investment type
+        if (holding.investmentType.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in bucket allocation
+        if (holding.bucketAllocation && holding.bucketAllocation.toLowerCase().includes(searchLower)) return true;
+        
+        // Search in net quantity (as string)
+        if (holding.netQuantity.toString().includes(searchLower)) return true;
+        
+        // Search in average buy price (as string)
+        if (holding.averageBuyPrice.toString().includes(searchLower)) return true;
+        
+        // Search in invested amount (as string)
+        if (holding.investedAmount.toString().includes(searchLower)) return true;
+        
+        // Search in current price (as string)
+        if (holding.currentPrice.toString().includes(searchLower)) return true;
+        
+        // Search in current value (as string)
+        if (holding.currentValue.toString().includes(searchLower)) return true;
+        
+        // Search in gain/loss amount (as string)
+        if (holding.gainLossAmount.toString().includes(searchLower)) return true;
+        
+        // Search in gain/loss percent (as string)
+        if (holding.gainLossPercent.toString().includes(searchLower)) return true;
+        
+        // Search in annual yield (as string)
+        if (holding.annualYield.toString().includes(searchLower)) return true;
+        
+        // Search in XIRR (as string)
+        if (holding.xirr.toString().includes(searchLower)) return true;
+        
+        return false;
+      });
+    }
+    
+    if (filters.minValue !== undefined) {
+      filtered = filtered.filter(holding => holding.currentValue >= filters.minValue!);
+    }
+    
+    if (filters.maxValue !== undefined) {
+      filtered = filtered.filter(holding => holding.currentValue <= filters.maxValue!);
+    }
+    
+    setFilteredHoldings(filtered);
+  }, [calculatedHoldings, filters]);
 
   // Function to manually load data for specific tabs
   const loadTabData = useCallback((tab: 'trades' | 'holdings' | 'buckets') => {
@@ -1184,6 +1284,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     trades,
     filteredTrades,
     holdings: calculatedHoldings,
+    filteredHoldings,
     buckets: calculatedBuckets,
     uniqueInvestments, // New: Expose unique investments for debugging
     

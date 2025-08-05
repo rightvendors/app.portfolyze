@@ -125,11 +125,19 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
   const totals = holdings.reduce((acc, holding) => ({
     investedAmount: acc.investedAmount + holding.investedAmount,
     currentValue: acc.currentValue + holding.currentValue,
-    gainLossAmount: acc.gainLossAmount + holding.gainLossAmount
-  }), { investedAmount: 0, currentValue: 0, gainLossAmount: 0 });
+    gainLossAmount: acc.gainLossAmount + holding.gainLossAmount,
+    annualYield: acc.annualYield + (holding.annualYield * holding.investedAmount),
+    xirr: acc.xirr + (holding.xirr * holding.investedAmount)
+  }), { investedAmount: 0, currentValue: 0, gainLossAmount: 0, annualYield: 0, xirr: 0 });
 
   const totalGainLossPercent = totals.investedAmount > 0 ? 
     (totals.gainLossAmount / totals.investedAmount) * 100 : 0;
+  
+  const averageAnnualYield = totals.investedAmount > 0 ? 
+    totals.annualYield / totals.investedAmount : 0;
+  
+  const averageXIRR = totals.investedAmount > 0 ? 
+    totals.xirr / totals.investedAmount : 0;
 
   const tableWidth = Object.values(columnWidths).reduce((sum, width) => sum + width, 0);
 
@@ -234,11 +242,15 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
             }`} style={{ width: columnWidths.gainLossPercent }}>
               {formatPercent(totalGainLossPercent)}
             </div>
-            <div className="h-8 px-3 text-xs border-r border-gray-300 flex items-center" 
-                 style={{ width: columnWidths.annualYield }}>
+            <div className={`h-8 px-3 text-xs font-bold border-r border-gray-300 flex items-center justify-end ${
+              averageAnnualYield >= 0 ? 'text-green-600' : 'text-red-600'
+            }`} style={{ width: columnWidths.annualYield }}>
+              {formatPercent(averageAnnualYield)}
             </div>
-            <div className="h-8 px-3 text-xs border-r border-gray-300 flex items-center" 
-                 style={{ width: columnWidths.xirr }}>
+            <div className={`h-8 px-3 text-xs font-bold border-r border-gray-300 flex items-center justify-end ${
+              averageXIRR >= 0 ? 'text-green-600' : 'text-red-600'
+            }`} style={{ width: columnWidths.xirr }}>
+              {formatPercent(averageXIRR)}
             </div>
           </div>
 

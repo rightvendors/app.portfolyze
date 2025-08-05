@@ -33,6 +33,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   const [navData, setNavData] = useState<{ [key: string]: MutualFundData }>({});
   const [stockSuggestions, setStockSuggestions] = useState<{ [key: string]: { query: string; isVisible: boolean } }>({});
   const [columnWidths, setColumnWidths] = useState({
+    checkbox: 40,
     date: 120,
     investmentType: 140,
     isin: 140,
@@ -43,12 +44,14 @@ const TradesTable: React.FC<TradesTableProps> = ({
     buyRate: 120,
     buyAmount: 140,
     brokerBank: 150,
-    bucketAllocation: 160,
-    action: 80
+    bucketAllocation: 160
   });
 
   const [resizing, setResizing] = useState<{ column: string; startX: number; startWidth: number } | null>(null);
   const [showAddInvestmentModal, setShowAddInvestmentModal] = useState(false);
+  const [sortField, setSortField] = useState<string>('date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [selectedTrades, setSelectedTrades] = useState<Set<string>>(new Set());
   const tableRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -688,11 +691,18 @@ const TradesTable: React.FC<TradesTableProps> = ({
   };
 
   const handleCellClick = (id: string, field: string, currentValue: any) => {
-    console.log(`Cell click: ${field} for trade ${id}, value: ${currentValue}, type: ${typeof currentValue}`);
+    const trade = trades.find(t => t.id === id);
+    console.log(`Cell click: ${field} for trade ${id}, value: ${currentValue}, type: ${typeof currentValue}, investmentType: ${trade?.investmentType}`);
     
-    if (field === 'buyAmount' || (field === 'name' && trades.find(t => t.id === id)?.investmentType === 'mutual_fund')) {
+    if (field === 'buyAmount') {
       console.log(`Cell ${field} is read-only for trade ${id}`);
       return; // This is a calculated field
+    }
+    
+    // Prevent editing name field for mutual funds (names are auto-populated from ISIN)
+    if (field === 'name' && trades.find(t => t.id === id)?.investmentType === 'mutual_fund') {
+      console.log(`Name field is read-only for mutual fund trade ${id}`);
+      return;
     }
     
     // Reset ISIN lookup state when editing ISIN
@@ -811,9 +821,72 @@ const TradesTable: React.FC<TradesTableProps> = ({
     }).format(amount);
   };
 
-  const totals = trades.reduce((acc, trade) => ({
-    buyAmount: acc.buyAmount + trade.buyAmount
-  }), { buyAmount: 0 });
+  // Sorting function
+  const sortTrades = (trades: Trade[]) => {
+    return [...trades].sort((a, b) => {
+      let aValue: any = a[sortField as keyof Trade];
+      let bValue: any = b[sortField as keyof Trade];
+      
+      // Handle string comparisons
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        aValue = aValue.toLowerCase();
+        bValue = bValue.toLowerCase();
+      }
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
+
+  // Handle column sorting
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Checkbox selection functions
+  const handleSelectAll = () => {
+    if (selectedTrades.size === trades.length) {
+      setSelectedTrades(new Set());
+    } else {
+      setSelectedTrades(new Set(trades.map(t => t.id)));
+    }
+  };
+
+  const handleSelectTrade = (tradeId: string) => {
+    const newSelected = new Set(selectedTrades);
+    if (newSelected.has(tradeId)) {
+      newSelected.delete(tradeId);
+    } else {
+      newSelected.add(tradeId);
+    }
+    setSelectedTrades(newSelected);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTrades.size === 0) return;
+    
+    if (window.confirm(`Are you sure you want to delete ${selectedTrades.size} selected trade(s)?`)) {
+      for (const tradeId of selectedTrades) {
+        await onDeleteTrade(tradeId);
+      }
+      setSelectedTrades(new Set());
+    }
+  };
+
+  const totals = trades.reduce((acc, trade) => {
+    const amount = trade.buyAmount;
+    if (trade.transactionType === 'buy') {
+      return { buyAmount: acc.buyAmount + amount };
+    } else {
+      return { buyAmount: acc.buyAmount - amount }; // Subtract sell amounts
+    }
+  }, { buyAmount: 0 });
 
   const getBucketDisplayValue = (value: string) => {
     if (!value) return '';
@@ -869,6 +942,17 @@ const TradesTable: React.FC<TradesTableProps> = ({
       );
     }
     
+    // Special handling for buyAmount field to show sell amounts in red
+    if (field === 'buyAmount') {
+      const isSell = trade.transactionType === 'sell';
+      const textColor = isSell ? 'text-red-600' : 'text-gray-900';
+      return (
+        <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths], height: 'auto' }}>
+          <span className={textColor}>{formatCurrency(value)}</span>
+        </div>
+      );
+    }
+    
     // Special handling for ISIN field
     if (field === 'isin' && trade.investmentType !== 'mutual_fund') {
       return (
@@ -901,7 +985,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
       return (
         <div className="relative min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white hover:bg-blue-50 cursor-pointer flex items-center"
              style={{ width: columnWidths[field], height: 'auto' }}
-             onClick={() => !isMutualFund && handleCellClick(trade.id, field, value)}>
+             onClick={() => handleCellClick(trade.id, field, value)}>
           {isLoading ? (
             <div className="flex items-center gap-2">
               <Loader className="w-3 h-3 animate-spin text-blue-500" />
@@ -1066,12 +1150,22 @@ const TradesTable: React.FC<TradesTableProps> = ({
     );
   };
 
-  const renderHeaderCell = (label: string, field: string) => (
+  const renderHeaderCell = (label: string, field: string, sortable: boolean = false) => (
     <div 
       className="relative h-8 px-2 text-xs font-medium text-gray-700 bg-gray-100 border-r border-b border-gray-300 flex items-center"
       style={{ width: columnWidths[field as keyof typeof columnWidths] }}
     >
-      {label}
+      <span 
+        className={sortable ? 'cursor-pointer hover:text-blue-600 flex items-center gap-1' : ''}
+        onClick={sortable ? () => handleSort(field) : undefined}
+      >
+        {label}
+        {sortable && sortField === field && (
+          <span className="text-blue-600">
+            {sortDirection === 'asc' ? '↑' : '↓'}
+          </span>
+        )}
+      </span>
       <div
         className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-500"
         onMouseDown={(e) => handleMouseDown(e, field)}
@@ -1147,22 +1241,15 @@ const TradesTable: React.FC<TradesTableProps> = ({
             Template
           </button>
           
-          <button
-            onClick={addNewRow}
-            className="flex items-center gap-1 px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 transition-colors"
-          >
-            <Plus size={10} />
-            Add Row
-          </button>
-          
-          {/* Debug button - remove in production */}
-          <button
-            onClick={clearAllTrades}
-            className="flex items-center gap-1 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
-            title="Clear all trades from Firebase (for debugging)"
-          >
-            🧹 Clear All Trades
-          </button>
+          {selectedTrades.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="flex items-center gap-1 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
+            >
+              <Trash2 size={10} />
+              Delete Selected ({selectedTrades.size})
+            </button>
+          )}
         </div>
       </div>
 
@@ -1170,48 +1257,74 @@ const TradesTable: React.FC<TradesTableProps> = ({
       <div className="mb-3 p-2 bg-blue-50 rounded text-xs border">
         <div className="flex gap-4">
           <div>
-            <span className="font-medium text-xs">Total Investment: </span>
-            <span className="text-blue-600 font-bold text-xs">{formatCurrency(totals.buyAmount)}</span>
+            <span className="font-medium text-xs">Net Investment: </span>
+            <span className={`font-bold text-xs ${totals.buyAmount >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+              {formatCurrency(totals.buyAmount)}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Excel-like Table */}
-      <div className="border border-gray-300 rounded overflow-auto" style={{ maxHeight: '70vh' }} ref={tableRef}>
+      {/* Excel-like Table with Frozen Header */}
+      <div className="border border-gray-300 rounded overflow-hidden" style={{ maxHeight: '70vh' }} ref={tableRef}>
         <div style={{ width: `${tableWidth}px`, minWidth: '100%' }}>
-          {/* Header */}
-          <div className="flex bg-gray-100 border-b border-gray-300">
-            {renderHeaderCell('Date', 'date')}
-            {renderHeaderCell('Investment Type', 'investmentType')}
-            {renderHeaderCell('ISIN Number', 'isin')}
-            {renderHeaderCell('Name', 'name')}
-            {renderHeaderCell('Interest %', 'interestRate')}
-            {renderHeaderCell('Buy/Sell', 'transactionType')}
-            {renderHeaderCell('Quantity', 'quantity')}
-            {renderHeaderCell('Buy Rate', 'buyRate')}
-            {renderHeaderCell('Buy Amount', 'buyAmount')}
-            {renderHeaderCell('Broker/Bank', 'brokerBank')}
-            {renderHeaderCell('Bucket Allocation', 'bucketAllocation')}
-            {renderHeaderCell('Action', 'action')}
+          {/* Frozen Header */}
+          <div className="sticky top-0 z-10 bg-white">
+                      {/* Header */}
+            <div className="flex bg-gray-100 border-b border-gray-300">
+              <div className="h-8 px-2 text-xs font-medium text-gray-700 border-r border-gray-300 flex items-center justify-center bg-gray-100"
+                   style={{ width: columnWidths.checkbox }}>
+                <input
+                  type="checkbox"
+                  checked={selectedTrades.size === trades.length && trades.length > 0}
+                  onChange={handleSelectAll}
+                  className="w-3 h-3 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </div>
+              {renderHeaderCell('Date', 'date', true)}
+              {renderHeaderCell('Investment Type', 'investmentType', true)}
+              {renderHeaderCell('ISIN Number', 'isin')}
+              {renderHeaderCell('Name', 'name', true)}
+              {renderHeaderCell('Interest %', 'interestRate')}
+              {renderHeaderCell('Buy/Sell', 'transactionType')}
+              {renderHeaderCell('Quantity', 'quantity')}
+              {renderHeaderCell('Buy Rate', 'buyRate')}
+              {renderHeaderCell('Buy Amount', 'buyAmount')}
+              {renderHeaderCell('Broker/Bank', 'brokerBank')}
+              {renderHeaderCell('Bucket Allocation', 'bucketAllocation')}
+            </div>
+
+                      {/* Totals Row */}
+            <div className="flex bg-blue-50 border-b border-gray-300">
+              <div className="h-8 px-2 text-xs font-bold text-gray-700 border-r border-gray-300 flex items-center" 
+                   style={{ width: columnWidths.checkbox }}>
+              </div>
+              <div className="h-8 px-2 text-xs font-bold text-gray-700 border-r border-gray-300 flex items-center" 
+                   style={{ width: columnWidths.date + columnWidths.investmentType + columnWidths.isin + columnWidths.name + columnWidths.interestRate + columnWidths.transactionType + columnWidths.quantity + columnWidths.buyRate }}>
+                TOTALS
+              </div>
+              <div className={`h-8 px-2 text-xs font-bold border-r border-gray-300 flex items-center ${totals.buyAmount >= 0 ? 'text-blue-600' : 'text-red-600'}`} style={{ width: columnWidths.buyAmount }}>
+                {formatCurrency(totals.buyAmount)}
+              </div>
+              <div className="h-8 px-2 text-xs border-r border-gray-300 flex items-center" style={{ width: columnWidths.brokerBank }}></div>
+              <div className="h-8 px-2 text-xs border-r border-gray-300 flex items-center" style={{ width: columnWidths.bucketAllocation }}></div>
+            </div>
           </div>
 
-          {/* Totals Row */}
-          <div className="flex bg-blue-50 border-b border-gray-300">
-            <div className="h-8 px-2 text-xs font-bold text-gray-700 border-r border-gray-300 flex items-center" 
-                 style={{ width: columnWidths.date + columnWidths.investmentType + columnWidths.isin + columnWidths.name + columnWidths.interestRate + columnWidths.transactionType + columnWidths.quantity + columnWidths.buyRate }}>
-              TOTALS
-            </div>
-            <div className="h-8 px-2 text-xs font-bold text-blue-600 border-r border-gray-300 flex items-center" style={{ width: columnWidths.buyAmount }}>
-              {formatCurrency(totals.buyAmount)}
-            </div>
-            <div className="h-8 px-2 text-xs border-r border-gray-300 flex items-center" style={{ width: columnWidths.brokerBank }}></div>
-            <div className="h-8 px-2 text-xs border-r border-gray-300 flex items-center" style={{ width: columnWidths.bucketAllocation }}></div>
-            <div className="h-8 px-2 text-xs border-r border-gray-300 flex items-center" style={{ width: columnWidths.action }}></div>
-          </div>
-
-          {/* Data Rows */}
-          {trades.map((trade) => (
+          {/* Scrollable Data Rows */}
+          <div className="overflow-y-auto" style={{ maxHeight: 'calc(70vh - 80px)' }}>
+            {/* Data Rows */}
+          {sortTrades(trades).map((trade) => (
             <div key={trade.id} className="flex hover:bg-gray-50">
+              <div className="min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white flex items-center justify-center"
+                   style={{ width: columnWidths.checkbox }}>
+                <input
+                  type="checkbox"
+                  checked={selectedTrades.has(trade.id)}
+                  onChange={() => handleSelectTrade(trade.id)}
+                  className="w-3 h-3 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </div>
               {renderCell(trade, 'date', trade.date)}
               {renderCell(trade, 'investmentType', trade.investmentType)}
               {renderCell(trade, 'isin', trade.isin || '')}
@@ -1257,16 +1370,9 @@ const TradesTable: React.FC<TradesTableProps> = ({
               {renderCell(trade, 'buyAmount', trade.buyAmount, false)}
               {renderCell(trade, 'brokerBank', trade.brokerBank)}
               {renderBucketCell(trade)}
-              <div className="min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white flex items-center justify-center" style={{ width: columnWidths.action, height: 'auto' }}>
-                <button
-                  onClick={() => onDeleteTrade(trade.id)}
-                  className="text-red-500 hover:text-red-700 transition-colors"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
             </div>
           ))}
+          </div>
         </div>
       </div>
       
@@ -1319,6 +1425,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
         isOpen={showAddInvestmentModal}
         onClose={() => setShowAddInvestmentModal(false)}
         onAddTrade={onAddTrade}
+        existingTrades={trades}
       />
     </div>
   );

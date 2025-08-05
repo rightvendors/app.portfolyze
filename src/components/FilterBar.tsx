@@ -60,7 +60,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
           Filters
         </button>
         
-        {filterType === 'trades' && (
+        {(filterType === 'trades' || filterType === 'holdings') && (
           <div className="text-xs text-gray-600">
             Showing {filteredRecords} of {totalRecords} records
           </div>
@@ -72,14 +72,14 @@ const FilterBar: React.FC<FilterBarProps> = ({
         <div className="px-4 pb-4 border-t border-gray-100 bg-gray-50">
           <div className="mt-4 space-y-4">
             {/* Search Bar - Full Width */}
-            {filterType === 'trades' && (
+            {(filterType === 'trades' || filterType === 'holdings') && (
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Search</label>
                 <div className="relative">
                   <Search size={12} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search all fields..."
+                    placeholder={filterType === 'trades' ? "Search all fields..." : "Search holdings..."}
                     value={filters.search}
                     onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
                     className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
