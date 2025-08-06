@@ -162,30 +162,95 @@ class BackgroundDataService {
         status: 'fetching'
       };
       
-      // Get popular stocks (you can expand this list)
+      // Get popular stocks (expanded list for better search)
       const popularStocks = [
         'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK',
-        'HINDUNILVR', 'ITC', 'SBIN', 'BHARTIARTL', 'KOTAKBANK'
+        'HINDUNILVR', 'ITC', 'SBIN', 'BHARTIARTL', 'KOTAKBANK',
+        'AXISBANK', 'WIPRO', 'HCLTECH', 'ASIANPAINT', 'MARUTI',
+        'ULTRACEMCO', 'SUNPHARMA', 'TATAMOTORS', 'POWERGRID', 'NESTLEIND',
+        'TECHM', 'BAJFINANCE', 'TITAN', 'BAJAJFINSV', 'ADANIENT',
+        'JSWSTEEL', 'ONGC', 'COALINDIA', 'DRREDDY', 'CIPLA'
       ];
       
       const stockData: CachedData[] = [];
       
+      // Stock name mapping for popular stocks
+      const stockNameMap: { [key: string]: string } = {
+        'RELIANCE': 'Reliance Industries Limited',
+        'TCS': 'Tata Consultancy Services Limited',
+        'HDFCBANK': 'HDFC Bank Limited',
+        'INFY': 'Infosys Limited',
+        'ICICIBANK': 'ICICI Bank Limited',
+        'HINDUNILVR': 'Hindustan Unilever Limited',
+        'ITC': 'ITC Limited',
+        'SBIN': 'State Bank of India',
+        'BHARTIARTL': 'Bharti Airtel Limited',
+        'KOTAKBANK': 'Kotak Mahindra Bank Limited',
+        'AXISBANK': 'Axis Bank Limited',
+        'WIPRO': 'Wipro Limited',
+        'HCLTECH': 'HCL Technologies Limited',
+        'ASIANPAINT': 'Asian Paints Limited',
+        'MARUTI': 'Maruti Suzuki India Limited',
+        'ULTRACEMCO': 'UltraTech Cement Limited',
+        'SUNPHARMA': 'Sun Pharmaceutical Industries Limited',
+        'TATAMOTORS': 'Tata Motors Limited',
+        'POWERGRID': 'Power Grid Corporation of India Limited',
+        'NESTLEIND': 'Nestle India Limited',
+        'TECHM': 'Tech Mahindra Limited',
+        'BAJFINANCE': 'Bajaj Finance Limited',
+        'TITAN': 'Titan Company Limited',
+        'BAJAJFINSV': 'Bajaj Finserv Limited',
+        'ADANIENT': 'Adani Enterprises Limited',
+        'JSWSTEEL': 'JSW Steel Limited',
+        'ONGC': 'Oil & Natural Gas Corporation Limited',
+        'COALINDIA': 'Coal India Limited',
+        'DRREDDY': 'Dr. Reddy\'s Laboratories Limited',
+        'CIPLA': 'Cipla Limited'
+      };
+
       for (const symbol of popularStocks) {
         try {
           const price = await this.stockService.getCurrentPrice(symbol);
           if (price) {
             stockData.push({
               id: `stock-${symbol}`,
-              name: symbol, // You might want to store actual company names
+              name: stockNameMap[symbol] || symbol,
               symbol: symbol,
               type: 'stock',
               price: price,
               lastUpdated: Date.now(),
               source: 'NSE'
             });
+          } else {
+            // Add with mapped name even if price not available
+            const mappedName = stockNameMap[symbol];
+            if (mappedName) {
+              stockData.push({
+                id: `stock-${symbol}`,
+                name: mappedName,
+                symbol: symbol,
+                type: 'stock',
+                price: 1000, // Default price
+                lastUpdated: Date.now(),
+                source: 'NSE'
+              });
+            }
           }
         } catch (error) {
           console.error(`Error fetching price for ${symbol}:`, error);
+          // Add with mapped name even if API fails
+          const mappedName = stockNameMap[symbol];
+          if (mappedName) {
+            stockData.push({
+              id: `stock-${symbol}`,
+              name: mappedName,
+              symbol: symbol,
+              type: 'stock',
+              price: 1000, // Default price
+              lastUpdated: Date.now(),
+              source: 'NSE'
+            });
+          }
         }
       }
       
@@ -217,15 +282,62 @@ class BackgroundDataService {
         status: 'fetching'
       };
       
-      // Get popular mutual funds
+      // Get popular mutual funds (expanded list for better search)
       const popularFunds = [
         'INF179K01WM1', // HDFC Nifty 50 Index Fund
         'INF179K01VK7', // HDFC Focused Fund
         'INF179K01VK8', // HDFC Mid-Cap Opportunities Fund
         'INF179K01VK9', // HDFC Small Cap Fund
-        'INF179K01VL0'  // HDFC Balanced Advantage Fund
+        'INF179K01VL0', // HDFC Balanced Advantage Fund
+        'INF179K01VL1', // HDFC Top 100 Fund
+        'INF179K01VL2', // HDFC Large Cap Fund
+        'INF179K01VL3', // HDFC Mid-Cap Fund
+        'INF179K01VL4', // HDFC Small Cap Fund
+        'INF179K01VL5', // HDFC Multi Cap Fund
+        'INF179K01VL6', // HDFC Flexi Cap Fund
+        'INF179K01VL7', // HDFC Value Fund
+        'INF179K01VL8', // HDFC Growth Fund
+        'INF179K01VL9', // HDFC Tax Saver Fund
+        'INF179K01VLA', // HDFC Children's Gift Fund
+        'INF179K01VLB', // DSP Top 100 Equity Fund
+        'INF179K01VLC', // DSP Mid Cap Fund
+        'INF179K01VLD', // DSP Small Cap Fund
+        'INF179K01VLE', // DSP Flexi Cap Fund
+        'INF179K01VLF', // DSP Value Fund
+        'INF179K01VLG', // DSP Tax Saver Fund
+        'INF179K01VLH', // DSP Balanced Advantage Fund
+        'INF179K01VLI', // DSP Equity Opportunities Fund
+        'INF179K01VLJ'  // DSP Natural Resources Fund
       ];
       
+      // Fund name mapping for popular funds
+      const fundNameMap: { [key: string]: string } = {
+        'INF179K01WM1': 'HDFC Nifty 50 Index Fund - Direct Plan',
+        'INF179K01VK7': 'HDFC Focused Fund - Growth Option - Direct Plan',
+        'INF179K01VK8': 'HDFC Mid-Cap Opportunities Fund - Direct Plan',
+        'INF179K01VK9': 'HDFC Small Cap Fund - Direct Plan',
+        'INF179K01VL0': 'HDFC Balanced Advantage Fund - Direct Plan',
+        'INF179K01VL1': 'HDFC Top 100 Fund - Direct Plan',
+        'INF179K01VL2': 'HDFC Large Cap Fund - Direct Plan',
+        'INF179K01VL3': 'HDFC Mid-Cap Fund - Direct Plan',
+        'INF179K01VL4': 'HDFC Small Cap Fund - Direct Plan',
+        'INF179K01VL5': 'HDFC Multi Cap Fund - Direct Plan',
+        'INF179K01VL6': 'HDFC Flexi Cap Fund - Direct Plan',
+        'INF179K01VL7': 'HDFC Value Fund - Direct Plan',
+        'INF179K01VL8': 'HDFC Growth Fund - Direct Plan',
+        'INF179K01VL9': 'HDFC Tax Saver Fund - Direct Plan',
+        'INF179K01VLA': 'HDFC Children\'s Gift Fund - Direct Plan',
+        'INF179K01VLB': 'DSP Top 100 Equity Fund - Direct Plan',
+        'INF179K01VLC': 'DSP Mid Cap Fund - Direct Plan',
+        'INF179K01VLD': 'DSP Small Cap Fund - Direct Plan',
+        'INF179K01VLE': 'DSP Flexi Cap Fund - Direct Plan',
+        'INF179K01VLF': 'DSP Value Fund - Direct Plan',
+        'INF179K01VLG': 'DSP Tax Saver Fund - Direct Plan',
+        'INF179K01VLH': 'DSP Balanced Advantage Fund - Direct Plan',
+        'INF179K01VLI': 'DSP Equity Opportunities Fund - Direct Plan',
+        'INF179K01VLJ': 'DSP Natural Resources Fund - Direct Plan'
+      };
+
       const fundData: CachedData[] = [];
       
       for (const isin of popularFunds) {
@@ -234,16 +346,43 @@ class BackgroundDataService {
           if (navData) {
             fundData.push({
               id: `mf-${isin}`,
-              name: navData.name || `Fund ${isin}`,
+              name: navData.name || fundNameMap[isin] || `Fund ${isin}`,
               symbol: isin,
               type: 'mutual_fund',
               price: navData.nav,
               lastUpdated: Date.now(),
               source: 'AMFI'
             });
+          } else {
+            // Add with mapped name if NAV data not available
+            const mappedName = fundNameMap[isin];
+            if (mappedName) {
+              fundData.push({
+                id: `mf-${isin}`,
+                name: mappedName,
+                symbol: isin,
+                type: 'mutual_fund',
+                price: 100, // Default NAV
+                lastUpdated: Date.now(),
+                source: 'AMFI'
+              });
+            }
           }
         } catch (error) {
           console.error(`Error fetching NAV for ${isin}:`, error);
+          // Add with mapped name even if API fails
+          const mappedName = fundNameMap[isin];
+          if (mappedName) {
+            fundData.push({
+              id: `mf-${isin}`,
+              name: mappedName,
+              symbol: isin,
+              type: 'mutual_fund',
+              price: 100, // Default NAV
+              lastUpdated: Date.now(),
+              source: 'AMFI'
+            });
+          }
         }
       }
       

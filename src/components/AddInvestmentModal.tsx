@@ -259,6 +259,29 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
     }
   };
 
+  // Apply filter to suggestions
+  const getFilteredSuggestions = () => {
+    if (selectedFilter === 'All') {
+      return suggestions;
+    }
+    
+    const filterMap: { [key: string]: string } = {
+      'Stock': 'stock',
+      'Mutual Fund': 'mutual_fund',
+      'Gold': 'gold',
+      'Silver': 'silver',
+      'Bond': 'bond',
+      'Fixed Deposit': 'fixed_deposit',
+      'NPS': 'nps',
+      'ETF': 'etf'
+    };
+    
+    const filterType = filterMap[selectedFilter];
+    if (!filterType) return suggestions;
+    
+    return suggestions.filter(investment => investment.type === filterType);
+  };
+
   const filteredInvestments = searchQuery.length >= 2 ? 
     optimizedSearchResults.map(result => ({
       id: result.id,
@@ -271,7 +294,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
       description: result.description,
       risk: result.risk,
       source: result.source
-    })) : suggestions;
+    })) : getFilteredSuggestions();
 
   const handleInvestmentSelect = (investment: Investment) => {
     setSelectedInvestment(investment);

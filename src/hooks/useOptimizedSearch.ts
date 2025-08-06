@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { backgroundDataService, CachedData } from '../services/backgroundDataService';
+import { getStockPriceService } from '../services/stockPriceService';
+import { getMutualFundService } from '../services/mutualFundApi';
 
 export interface SearchResult {
   id: string;
@@ -47,7 +49,7 @@ export const useOptimizedSearch = () => {
       // Search in cached data first (instant results)
       const cachedData = await backgroundDataService.getAllCachedData();
       
-      // Search stocks
+      // Search stocks from cached data
       const stockResults = cachedData.stocks
         .filter(stock => 
           stock.name.toLowerCase().includes(searchTerm) ||
@@ -59,14 +61,14 @@ export const useOptimizedSearch = () => {
           symbol: stock.symbol,
           type: stock.type as 'stock',
           price: stock.price,
-          change: 0, // Will be calculated if needed
+          change: 0,
           changePercent: 0,
           description: `Stock from ${stock.source}`,
           risk: 'Medium Risk' as const,
           source: 'cached' as const
         }));
 
-      // Search mutual funds
+      // Search mutual funds from cached data
       const mutualFundResults = cachedData.mutualFunds
         .filter(fund => 
           fund.name.toLowerCase().includes(searchTerm) ||
@@ -85,7 +87,7 @@ export const useOptimizedSearch = () => {
           source: 'cached' as const
         }));
 
-      // Search commodities
+      // Search commodities from cached data
       const commodityResults = cachedData.commodities
         .filter(commodity => 
           commodity.name.toLowerCase().includes(searchTerm) ||
@@ -104,10 +106,66 @@ export const useOptimizedSearch = () => {
           source: 'cached' as const
         }));
 
-      results.push(...stockResults, ...mutualFundResults, ...commodityResults);
+      // If we have enough results from cache, use them
+      if (stockResults.length + mutualFundResults.length + commodityResults.length >= 5) {
+        results.push(...stockResults, ...mutualFundResults, ...commodityResults);
+      } else {
+        // Fetch from CSV sources for more comprehensive search
+        const stockService = getStockPriceService();
+        const mutualFundService = getMutualFundService();
+
+        try {
+          // Search stocks from CSV
+          const stockSuggestions = await stockService.getStockSuggestions(query, 5);
+          stockSuggestions.forEach(stock => {
+            results.push({
+              id: `stock-${stock.symbol}`,
+              name: stock.name,
+              symbol: stock.symbol,
+              type: 'stock',
+              price: 0, // Will be fetched separately if needed
+              change: 0,
+              changePercent: 0,
+              description: 'Stock from Indian markets',
+              risk: 'Medium Risk',
+              source: 'search'
+            });
+          });
+
+          // Search mutual funds from CSV
+          const fundSuggestions = await mutualFundService.getFundSuggestions(query, 5);
+          fundSuggestions.forEach(fundName => {
+            results.push({
+              id: `mf-${fundName}`,
+              name: fundName,
+              symbol: fundName,
+              type: 'mutual_fund',
+              price: 0,
+              change: 0,
+              changePercent: 0,
+              description: 'Mutual fund from AMFI database',
+              risk: 'Medium Risk',
+              source: 'search'
+            });
+          });
+        } catch (error) {
+          console.error('Error fetching from CSV sources:', error);
+        }
+
+        // Add cached results as well
+        results.push(...stockResults, ...mutualFundResults, ...commodityResults);
+      }
+
+      // Remove duplicates based on name and symbol
+      const uniqueResults = results.filter((result, index, self) => 
+        index === self.findIndex(r => 
+          r.name.toLowerCase() === result.name.toLowerCase() && 
+          r.symbol.toLowerCase() === result.symbol.toLowerCase()
+        )
+      );
 
       // Limit results to top 10
-      setSearchResults(results.slice(0, 10));
+      setSearchResults(uniqueResults.slice(0, 10));
 
     } catch (error) {
       console.error('Error performing search:', error);
