@@ -41,7 +41,8 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
     buyRate: '',
     transactionType: 'buy' as 'buy' | 'sell',
     brokerBank: '',
-    bucketAllocation: 'bucket1a'
+    bucketAllocation: 'bucket1a',
+    interestRate: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<Investment[]>([]);
@@ -374,7 +375,14 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
 
   const handleInvestmentSelect = (investment: Investment) => {
     setSelectedInvestment(investment);
-    setShowTradeForm(true);
+    
+    // For Bond, Fixed deposit, NPS, ETF - directly show trade form
+    if (['bond', 'fixed_deposit', 'nps', 'etf'].includes(investment.type)) {
+      setShowTradeForm(true);
+    } else {
+      // For stocks, mutual funds, gold, silver - show trade form as before
+      setShowTradeForm(true);
+    }
   };
 
   const handleAddTrade = () => {
@@ -391,7 +399,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
       buyAmount: (parseFloat(tradeData.quantity) || 0) * (parseFloat(tradeData.buyRate) || 0),
       brokerBank: tradeData.brokerBank,
       bucketAllocation: tradeData.bucketAllocation,
-      interestRate: 0
+      interestRate: parseFloat(tradeData.interestRate) || 0
     };
 
     onAddTrade(newTrade);
@@ -408,7 +416,8 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
       buyRate: '',
       transactionType: 'buy',
       brokerBank: '',
-      bucketAllocation: 'bucket1a'
+      bucketAllocation: 'bucket1a',
+      interestRate: ''
     });
   };
 
@@ -694,6 +703,23 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
                         <option value="bucket3">Bucket 3</option>
                       </select>
                     </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Interest Rate %
+                        {['bond', 'fixed_deposit', 'nps', 'etf'].includes(selectedInvestment?.type || '') && (
+                          <span className="text-red-500 ml-1">*</span>
+                        )}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={tradeData.interestRate}
+                        onChange={(e) => setTradeData({ ...tradeData, interestRate: e.target.value })}
+                        placeholder="Enter interest rate"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
                   </div>
 
                   {/* Total Amount Display */}
@@ -718,7 +744,11 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
                     </button>
                     <button
                       onClick={handleAddTrade}
-                      disabled={!tradeData.quantity || !tradeData.buyRate}
+                      disabled={
+                        !tradeData.quantity || 
+                        !tradeData.buyRate || 
+                        (['bond', 'fixed_deposit', 'nps', 'etf'].includes(selectedInvestment?.type || '') && !tradeData.interestRate)
+                      }
                       className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                     >
                       Add Trade

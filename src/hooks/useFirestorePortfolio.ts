@@ -728,6 +728,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     
     if (filters.search && filters.search.trim()) {
       const searchLower = filters.search.toLowerCase().trim();
+      console.log('=== SEARCH DEBUG ===');
+      console.log('Search term:', searchLower);
       console.log('Searching trades for:', searchLower, 'in', filtered.length, 'trades');
       
       filtered = filtered.filter(trade => {
@@ -806,6 +808,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       filtered = filtered.filter(trade => trade.buyAmount <= filters.maxValue!);
     }
     
+    console.log('Setting filtered trades:', filtered.length, 'from', trades.length, 'trades');
+    console.log('Current filters:', filters);
     setFilteredTrades(filtered);
   }, [trades, filters]);
 

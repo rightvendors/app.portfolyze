@@ -26,7 +26,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   const [showAddInvestmentModal, setShowAddInvestmentModal] = useState(false);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [selectedTrades, setSelectedTrades] = useState<Set<number>>(new Set());
-  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
   const [sortField, setSortField] = useState<string>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [columnWidths, setColumnWidths] = useState({
@@ -39,7 +39,6 @@ const TradesTable: React.FC<TradesTableProps> = ({
     quantity: 100,
     buyRate: 120,
     buyAmount: 140,
-    brokerBank: 150,
     bucketAllocation: 160
   });
   const [resizing, setResizing] = useState<{ column: string; startX: number; startWidth: number } | null>(null);
@@ -247,7 +246,6 @@ const TradesTable: React.FC<TradesTableProps> = ({
       'Quantity': trade.quantity,
       'Buy Rate': trade.buyRate,
       'Buy Amount': trade.buyAmount,
-      'Broker/Bank': trade.brokerBank || '',
       'Bucket Allocation': getBucketDisplayValue(trade.bucketAllocation)
     }));
 
@@ -256,7 +254,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
     const colWidths = [
       { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 30 }, { wch: 10 },
-      { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 18 }
+      { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 18 }
     ];
     ws['!cols'] = colWidths;
 
@@ -278,7 +276,6 @@ const TradesTable: React.FC<TradesTableProps> = ({
         'Quantity': 100,
         'Buy Rate': 1000,
         'Buy Amount': 100000,
-        'Broker/Bank': 'Example Broker',
         'Bucket Allocation': 'Bucket 1A'
       }
     ];
@@ -288,7 +285,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
     const colWidths = [
       { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 30 }, { wch: 10 },
-      { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 18 }
+      { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 18 }
     ];
     ws['!cols'] = colWidths;
 
@@ -370,7 +367,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
           transactionType: transactionTypeMap[rowData['Buy/Sell']] || 'buy',
           quantity: parseFloat(rowData['Quantity']) || 0,
           buyRate: parseFloat(rowData['Buy Rate']) || 0,
-          brokerBank: rowData['Broker/Bank'] || '',
+          brokerBank: '', // Default empty since column is removed
           bucketAllocation: rowData['Bucket Allocation'] || 'bucket1a'
         };
 
@@ -457,10 +454,9 @@ const TradesTable: React.FC<TradesTableProps> = ({
     }
 
     if (field === 'name') {
-      const isMutualFund = trade.investmentType === 'mutual_fund';
       return (
         <div className={readOnlyClass} style={{ width: columnWidths[field as keyof typeof columnWidths] }}>
-          <span className={isMutualFund ? 'text-blue-600' : ''}>{value || ''}</span>
+          {value || ''}
         </div>
       );
     }
@@ -634,24 +630,40 @@ const TradesTable: React.FC<TradesTableProps> = ({
               {renderHeaderCell('Quantity', 'quantity')}
               {renderHeaderCell('Buy Rate', 'buyRate')}
               {renderHeaderCell('Buy Amount', 'buyAmount')}
-              {renderHeaderCell('Broker/Bank', 'brokerBank')}
               {renderHeaderCell('Bucket Allocation', 'bucketAllocation')}
             </div>
 
             {/* Totals Row */}
-            <div className="flex bg-blue-50 border-b border-gray-300">
-              <div className="h-8 px-2 text-xs font-bold text-gray-700 border-r border-gray-300 flex items-center" 
+            <div className="flex bg-blue-50">
+              <div className="min-h-8 px-2 py-1 text-xs font-bold text-gray-700 border-r border-b border-gray-300 bg-blue-50 flex items-center justify-center" 
                    style={{ width: columnWidths.checkbox }}>
               </div>
-              <div className="h-8 px-2 text-xs font-bold text-gray-700 border-r border-gray-300 flex items-center" 
-                   style={{ width: columnWidths.date + columnWidths.investmentType + columnWidths.name + columnWidths.interestRate + columnWidths.transactionType + columnWidths.quantity + columnWidths.buyRate }}>
+              <div className="min-h-8 px-2 py-1 text-xs font-bold text-gray-700 border-r border-b border-gray-300 bg-blue-50 flex items-center" 
+                   style={{ width: columnWidths.date }}>
                 TOTALS
               </div>
-              <div className={`h-8 px-2 text-xs font-bold border-r border-gray-300 flex items-center ${totals.buyAmount >= 0 ? 'text-blue-600' : 'text-red-600'}`} style={{ width: columnWidths.buyAmount }}>
+              <div className="min-h-8 px-2 py-1 text-xs font-bold text-gray-700 border-r border-b border-gray-300 bg-blue-50 flex items-center" 
+                   style={{ width: columnWidths.investmentType }}>
+              </div>
+              <div className="min-h-8 px-2 py-1 text-xs font-bold text-gray-700 border-r border-b border-gray-300 bg-blue-50 flex items-center" 
+                   style={{ width: columnWidths.name }}>
+              </div>
+              <div className="min-h-8 px-2 py-1 text-xs font-bold text-gray-700 border-r border-b border-gray-300 bg-blue-50 flex items-center" 
+                   style={{ width: columnWidths.interestRate }}>
+              </div>
+              <div className="min-h-8 px-2 py-1 text-xs font-bold text-gray-700 border-r border-b border-gray-300 bg-blue-50 flex items-center" 
+                   style={{ width: columnWidths.transactionType }}>
+              </div>
+              <div className="min-h-8 px-2 py-1 text-xs font-bold text-gray-700 border-r border-b border-gray-300 bg-blue-50 flex items-center" 
+                   style={{ width: columnWidths.quantity }}>
+              </div>
+              <div className="min-h-8 px-2 py-1 text-xs font-bold text-gray-700 border-r border-b border-gray-300 bg-blue-50 flex items-center" 
+                   style={{ width: columnWidths.buyRate }}>
+              </div>
+              <div className={`min-h-8 px-2 py-1 text-xs font-bold border-r border-b border-gray-300 bg-blue-50 flex items-center ${totals.buyAmount >= 0 ? 'text-blue-600' : 'text-red-600'}`} style={{ width: columnWidths.buyAmount }}>
                 {formatCurrency(totals.buyAmount)}
               </div>
-              <div className="h-8 px-2 text-xs border-r border-gray-300 flex items-center" style={{ width: columnWidths.brokerBank }}></div>
-              <div className="h-8 px-2 text-xs border-r border-gray-300 flex items-center" style={{ width: columnWidths.bucketAllocation }}></div>
+              <div className="min-h-8 px-2 py-1 text-xs font-bold text-gray-700 border-r border-b border-gray-300 bg-blue-50 flex items-center" style={{ width: columnWidths.bucketAllocation }}></div>
             </div>
           </div>
 
@@ -662,7 +674,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
               <div 
                 key={`${trade.id}-${index}`}
                 className="flex hover:bg-gray-50 relative group"
-                onMouseEnter={() => setHoveredRow(trade.id)}
+                onMouseEnter={() => setHoveredRow(index)}
                 onMouseLeave={() => setHoveredRow(null)}
               >
                 <div className="min-h-8 px-2 py-1 text-xs border-r border-b border-gray-300 bg-white flex items-center justify-center"
@@ -682,11 +694,10 @@ const TradesTable: React.FC<TradesTableProps> = ({
                 {renderCell(trade, 'quantity', trade.quantity)}
                 {renderCell(trade, 'buyRate', trade.buyRate)}
                 {renderCell(trade, 'buyAmount', trade.buyAmount)}
-                {renderCell(trade, 'brokerBank', trade.brokerBank)}
                 {renderBucketCell(trade)}
                 
                 {/* Hover Actions */}
-                {hoveredRow === trade.id && (
+                {hoveredRow === index && (
                   <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1 bg-white border border-gray-300 rounded-md shadow-lg px-2 py-1">
                     <button
                       onClick={() => handleEditTrade(trade)}
