@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Search, ArrowLeft, TrendingUp, TrendingDown, Plus, Clock, Star } from 'lucide-react';
 import { Trade } from '../types/portfolio';
-import { getStockPriceService, StockSuggestion } from '../services/stockPriceService';
-import { getMutualFundService } from '../services/mutualFundApi';
-import { getGoldSilverPriceService } from '../services/goldPriceService';
+import { useOptimizedSearch, SearchResult } from '../hooks/useOptimizedSearch';
 
 interface Investment {
   id: string;
@@ -15,7 +13,7 @@ interface Investment {
   changePercent: number;
   description: string;
   risk: 'Low Risk' | 'Medium Risk' | 'High Risk';
-  source: 'existing' | 'popular' | 'search';
+  source: 'existing' | 'popular' | 'search' | 'cached';
 }
 
 interface AddInvestmentModalProps {
@@ -31,7 +29,6 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
   onAddTrade,
   existingTrades
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('All');
   const [selectedInvestment, setSelectedInvestment] = useState<Investment | null>(null);
   const [showTradeForm, setShowTradeForm] = useState(false);
@@ -44,15 +41,18 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
     bucketAllocation: 'bucket1a',
     interestRate: ''
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const [searchResults, setSearchResults] = useState<Investment[]>([]);
   const [suggestions, setSuggestions] = useState<Investment[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Services
-  const stockService = getStockPriceService();
-  const mutualFundService = getMutualFundService();
-  const goldSilverService = getGoldSilverPriceService();
+  // Optimized search hook
+  const {
+    searchQuery,
+    setSearchQuery,
+    searchResults: optimizedSearchResults,
+    isLoading,
+    getSuggestions,
+    clearSearch
+  } = useOptimizedSearch();
 
   // Popular Indian market investments
   const popularInvestments: Investment[] = [
@@ -184,6 +184,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
       case 'existing': return <Clock className="w-4 h-4 text-blue-600" />;
       case 'popular': return <Star className="w-4 h-4 text-yellow-600" />;
       case 'search': return <Search className="w-4 h-4 text-green-600" />;
+      case 'cached': return <TrendingUp className="w-4 h-4 text-purple-600" />;
       default: return null;
     }
   };
@@ -193,6 +194,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
       case 'existing': return 'Your Portfolio';
       case 'popular': return 'Popular';
       case 'search': return 'Search Result';
+      case 'cached': return 'Live Data';
       default: return '';
     }
   };
@@ -222,111 +224,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
     return Array.from(uniqueInvestments.values());
   };
 
-  // Search investments using real data sources
-  const searchInvestments = async (query: string): Promise<Investment[]> => {
-    if (!query || query.length < 2) return [];
 
-    const results: Investment[] = [];
-    
-    try {
-      // Search stocks
-      const stockSuggestions = await stockService.getStockSuggestions(query, 5);
-      stockSuggestions.forEach(stock => {
-        results.push({
-          id: `stock-${stock.symbol}`,
-          name: stock.name,
-          symbol: stock.symbol,
-          type: 'stock',
-          price: 0, // Will be fetched separately
-          change: 0,
-          changePercent: 0,
-          description: 'Stock from Indian markets',
-          risk: 'Medium Risk',
-          source: 'search'
-        });
-      });
-
-      // Search mutual funds
-      const fundSuggestions = await mutualFundService.getFundSuggestions(query, 5);
-      fundSuggestions.forEach(fundName => {
-        results.push({
-          id: `mf-${fundName}`,
-          name: fundName,
-          symbol: fundName,
-          type: 'mutual_fund',
-          price: 0,
-          change: 0,
-          changePercent: 0,
-          description: 'Mutual fund from AMFI database',
-          risk: 'Medium Risk',
-          source: 'search'
-        });
-      });
-
-    } catch (error) {
-      console.error('Error searching investments:', error);
-    }
-
-    return results;
-  };
-
-  // Fetch current prices for investments
-  const fetchCurrentPrices = async (investments: Investment[]): Promise<Investment[]> => {
-    const updatedInvestments = [...investments];
-    
-    for (let i = 0; i < updatedInvestments.length; i++) {
-      const investment = updatedInvestments[i];
-      
-      try {
-        if (investment.type === 'stock') {
-          const price = await stockService.getCurrentPrice(investment.symbol);
-          if (price) {
-            updatedInvestments[i] = {
-              ...investment,
-              price: price,
-              change: Math.random() * 100 - 50, // Mock change for now
-              changePercent: Math.random() * 10 - 5
-            };
-          }
-        } else if (investment.type === 'mutual_fund') {
-          // For mutual funds, we'll use the existing NAV service
-          const navData = await mutualFundService.searchByISIN(investment.symbol);
-          if (navData) {
-            updatedInvestments[i] = {
-              ...investment,
-              price: navData.nav,
-              change: 0,
-              changePercent: 0
-            };
-          }
-        } else if (investment.type === 'gold') {
-          const goldPrice = await goldSilverService.getCurrentGoldPrice();
-          if (goldPrice) {
-            updatedInvestments[i] = {
-              ...investment,
-              price: goldPrice,
-              change: Math.random() * 50 - 25,
-              changePercent: Math.random() * 5 - 2.5
-            };
-          }
-        } else if (investment.type === 'silver') {
-          const silverPrice = await goldSilverService.getCurrentSilverPrice();
-          if (silverPrice) {
-            updatedInvestments[i] = {
-              ...investment,
-              price: silverPrice,
-              change: Math.random() * 10 - 5,
-              changePercent: Math.random() * 3 - 1.5
-            };
-          }
-        }
-      } catch (error) {
-        console.error(`Error fetching price for ${investment.symbol}:`, error);
-      }
-    }
-
-    return updatedInvestments;
-  };
 
   // Load suggestions on component mount
   useEffect(() => {
@@ -335,52 +233,78 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
     }
   }, [isOpen, existingTrades]);
 
-  // Search when query changes
-  useEffect(() => {
-    if (searchQuery.length >= 2) {
-      performSearch();
-    } else {
-      setSearchResults([]);
-    }
-  }, [searchQuery]);
-
   const loadSuggestions = async () => {
-    setIsLoading(true);
     try {
       const existingInvestments = getExistingInvestments();
-      const allSuggestions = [...existingInvestments, ...popularInvestments];
-      const suggestionsWithPrices = await fetchCurrentPrices(allSuggestions);
-      setSuggestions(suggestionsWithPrices);
+      const cachedSuggestions = await getSuggestions();
+      
+      // Convert SearchResult to Investment format
+      const convertedSuggestions: Investment[] = cachedSuggestions.map(result => ({
+        id: result.id,
+        name: result.name,
+        symbol: result.symbol,
+        type: result.type,
+        price: result.price,
+        change: result.change,
+        changePercent: result.changePercent,
+        description: result.description,
+        risk: result.risk,
+        source: result.source
+      }));
+      
+      const allSuggestions = [...existingInvestments, ...convertedSuggestions];
+      setSuggestions(allSuggestions);
     } catch (error) {
       console.error('Error loading suggestions:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const performSearch = async () => {
-    setIsLoading(true);
-    try {
-      const searchResults = await searchInvestments(searchQuery);
-      const resultsWithPrices = await fetchCurrentPrices(searchResults);
-      setSearchResults(resultsWithPrices);
-    } catch (error) {
-      console.error('Error performing search:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const filteredInvestments = searchQuery.length >= 2 ? searchResults : suggestions;
+  const filteredInvestments = searchQuery.length >= 2 ? 
+    optimizedSearchResults.map(result => ({
+      id: result.id,
+      name: result.name,
+      symbol: result.symbol,
+      type: result.type,
+      price: result.price,
+      change: result.change,
+      changePercent: result.changePercent,
+      description: result.description,
+      risk: result.risk,
+      source: result.source
+    })) : suggestions;
 
   const handleInvestmentSelect = (investment: Investment) => {
     setSelectedInvestment(investment);
+    setShowTradeForm(true);
+  };
+
+  const handleFilterSelect = (filter: string) => {
+    setSelectedFilter(filter);
     
     // For Bond, Fixed deposit, NPS, ETF - directly show trade form
-    if (['bond', 'fixed_deposit', 'nps', 'etf'].includes(investment.type)) {
-      setShowTradeForm(true);
-    } else {
-      // For stocks, mutual funds, gold, silver - show trade form as before
+    if (['Bond', 'Fixed Deposit', 'NPS', 'ETF'].includes(filter)) {
+      // Create a placeholder investment for the selected type
+      const typeMap: { [key: string]: string } = {
+        'Bond': 'bond',
+        'Fixed Deposit': 'fixed_deposit',
+        'NPS': 'nps',
+        'ETF': 'etf'
+      };
+      
+      const placeholderInvestment: Investment = {
+        id: `placeholder-${typeMap[filter]}`,
+        name: `New ${filter}`,
+        symbol: '',
+        type: typeMap[filter] as 'bond' | 'fixed_deposit' | 'nps' | 'etf',
+        price: 0,
+        change: 0,
+        changePercent: 0,
+        description: `Add new ${filter.toLowerCase()} investment`,
+        risk: 'Medium Risk',
+        source: 'search'
+      };
+      
+      setSelectedInvestment(placeholderInvestment);
       setShowTradeForm(true);
     }
   };
@@ -495,19 +419,19 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
               {/* Filters */}
               <div className="px-6 py-4 border-b border-gray-200">
                 <div className="flex gap-2 overflow-x-auto">
-                  {filters.map((filter) => (
-                    <button
-                      key={filter}
-                      onClick={() => setSelectedFilter(filter)}
-                      className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                        selectedFilter === filter
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {filter}
-                    </button>
-                  ))}
+                                     {filters.map((filter) => (
+                     <button
+                       key={filter}
+                       onClick={() => handleFilterSelect(filter)}
+                       className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                         selectedFilter === filter
+                           ? 'bg-blue-600 text-white'
+                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                       }`}
+                     >
+                       {filter}
+                     </button>
+                   ))}
                 </div>
               </div>
 
@@ -629,16 +553,34 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
 
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="max-w-2xl mx-auto space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
-                      <input
-                        type="date"
-                        value={tradeData.date}
-                        onChange={(e) => setTradeData({ ...tradeData, date: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
+                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                     <div>
+                       <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+                       <input
+                         type="date"
+                         value={tradeData.date}
+                         onChange={(e) => setTradeData({ ...tradeData, date: e.target.value })}
+                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                       />
+                     </div>
+
+                     <div>
+                       <label className="block text-sm font-medium text-gray-700 mb-2">Investment Name</label>
+                       <input
+                         type="text"
+                         value={selectedInvestment?.name || ''}
+                         onChange={(e) => {
+                           if (selectedInvestment) {
+                             setSelectedInvestment({
+                               ...selectedInvestment,
+                               name: e.target.value
+                             });
+                           }
+                         }}
+                         placeholder="Enter investment name"
+                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                       />
+                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Transaction Type</label>
@@ -742,17 +684,18 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
                     >
                       Cancel
                     </button>
-                    <button
-                      onClick={handleAddTrade}
-                      disabled={
-                        !tradeData.quantity || 
-                        !tradeData.buyRate || 
-                        (['bond', 'fixed_deposit', 'nps', 'etf'].includes(selectedInvestment?.type || '') && !tradeData.interestRate)
-                      }
-                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                    >
-                      Add Trade
-                    </button>
+                                         <button
+                       onClick={handleAddTrade}
+                       disabled={
+                         !tradeData.quantity || 
+                         !tradeData.buyRate || 
+                         !selectedInvestment?.name ||
+                         (['bond', 'fixed_deposit', 'nps', 'etf'].includes(selectedInvestment?.type || '') && !tradeData.interestRate)
+                       }
+                       className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                     >
+                       Add Trade
+                     </button>
                   </div>
                 </div>
               </div>

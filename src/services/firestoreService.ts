@@ -6,6 +6,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  setDoc,
   query,
   where,
   orderBy,
@@ -289,6 +290,59 @@ export class FirestoreService {
     }, (error) => {
       console.error('Error in buckets subscription:', error);
     });
+  }
+
+  // CACHE DATA METHODS
+  async saveCachedData(type: string, data: any[], metadata: any): Promise<void> {
+    try {
+      const cacheRef = doc(db, 'cache', type);
+      await setDoc(cacheRef, {
+        data: data,
+        metadata: metadata,
+        lastUpdated: serverTimestamp()
+      });
+    } catch (error) {
+      console.error(`Error saving ${type} cache:`, error);
+      throw error;
+    }
+  }
+
+  async getCachedData(): Promise<{
+    stocks: any[];
+    mutualFunds: any[];
+    commodities: any[];
+    metadata: any;
+  }> {
+    try {
+      const stocksRef = doc(db, 'cache', 'stocks');
+      const mutualFundsRef = doc(db, 'cache', 'mutual_funds');
+      const commoditiesRef = doc(db, 'cache', 'commodities');
+
+      const [stocksDoc, mutualFundsDoc, commoditiesDoc] = await Promise.all([
+        getDoc(stocksRef),
+        getDoc(mutualFundsRef),
+        getDoc(commoditiesRef)
+      ]);
+
+      return {
+        stocks: stocksDoc.exists() ? stocksDoc.data()?.data || [] : [],
+        mutualFunds: mutualFundsDoc.exists() ? mutualFundsDoc.data()?.data || [] : [],
+        commodities: commoditiesDoc.exists() ? commoditiesDoc.data()?.data || [] : [],
+        metadata: {
+          stocks: stocksDoc.exists() ? stocksDoc.data()?.metadata : null,
+          mutualFunds: mutualFundsDoc.exists() ? mutualFundsDoc.data()?.metadata : null,
+          commodities: commoditiesDoc.exists() ? commoditiesDoc.data()?.metadata : null
+        }
+      };
+    } catch (error) {
+      console.error('Error getting cached data:', error);
+      return {
+        stocks: [],
+        mutualFunds: [],
+        commodities: [],
+        metadata: {}
+      };
+    }
   }
 }
 
