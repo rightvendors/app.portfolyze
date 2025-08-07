@@ -213,7 +213,7 @@ class MutualFundApiService {
   }
 
   // Get suggestive list of fund names based on partial input
-  async getFundSuggestions(partialName: string, maxResults = 10): Promise<string[]> {
+  async getFundSuggestions(partialName: string, maxResults = 100): Promise<string[]> {
     const allNAVs = await this.getAllNAVs();
     const searchKey = partialName.toLowerCase().trim();
 
@@ -223,6 +223,15 @@ class MutualFundApiService {
 
     // Remove duplicates and limit results
     const uniqueMatches = [...new Set(matches)].slice(0, maxResults);
+
+    // Log debugging information
+    console.log(`Mutual fund search for "${partialName}" found:`, {
+      totalNAVs: allNAVs.length,
+      matches: matches.length,
+      uniqueMatches: uniqueMatches.length,
+      maxResults: maxResults,
+      sampleMatches: uniqueMatches.slice(0, 5)
+    });
 
     return uniqueMatches;
   }

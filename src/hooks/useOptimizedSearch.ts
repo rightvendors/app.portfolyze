@@ -106,54 +106,49 @@ export const useOptimizedSearch = () => {
           source: 'cached' as const
         }));
 
-      // If we have enough results from cache, use them
-      if (stockResults.length + mutualFundResults.length + commodityResults.length >= 5) {
-        results.push(...stockResults, ...mutualFundResults, ...commodityResults);
-      } else {
-        // Fetch from CSV sources for more comprehensive search
-        const stockService = getStockPriceService();
-        const mutualFundService = getMutualFundService();
+      // Always include cached results
+      results.push(...stockResults, ...mutualFundResults, ...commodityResults);
+      
+      // Always fetch from CSV sources for comprehensive search
+      const stockService = getStockPriceService();
+      const mutualFundService = getMutualFundService();
 
-        try {
-          // Search stocks from CSV
-          const stockSuggestions = await stockService.getStockSuggestions(query, 5);
-          stockSuggestions.forEach(stock => {
-            results.push({
-              id: `stock-${stock.symbol}`,
-              name: stock.name,
-              symbol: stock.symbol,
-              type: 'stock',
-              price: 0, // Will be fetched separately if needed
-              change: 0,
-              changePercent: 0,
-              description: 'Stock from Indian markets',
-              risk: 'Medium Risk',
-              source: 'search'
-            });
+      try {
+        // Search stocks from CSV
+        const stockSuggestions = await stockService.getStockSuggestions(query, 20);
+        stockSuggestions.forEach(stock => {
+          results.push({
+            id: `stock-${stock.symbol}`,
+            name: stock.name,
+            symbol: stock.symbol,
+            type: 'stock',
+            price: 0, // Will be fetched separately if needed
+            change: 0,
+            changePercent: 0,
+            description: 'Stock from Indian markets',
+            risk: 'Medium Risk',
+            source: 'search'
           });
+        });
 
-          // Search mutual funds from CSV
-          const fundSuggestions = await mutualFundService.getFundSuggestions(query, 5);
-          fundSuggestions.forEach(fundName => {
-            results.push({
-              id: `mf-${fundName}`,
-              name: fundName,
-              symbol: fundName,
-              type: 'mutual_fund',
-              price: 0,
-              change: 0,
-              changePercent: 0,
-              description: 'Mutual fund from AMFI database',
-              risk: 'Medium Risk',
-              source: 'search'
-            });
+        // Search mutual funds from CSV
+        const fundSuggestions = await mutualFundService.getFundSuggestions(query, 50);
+        fundSuggestions.forEach(fundName => {
+          results.push({
+            id: `mf-${fundName}`,
+            name: fundName,
+            symbol: fundName,
+            type: 'mutual_fund',
+            price: 0,
+            change: 0,
+            changePercent: 0,
+            description: 'Mutual fund from AMFI database',
+            risk: 'Medium Risk',
+            source: 'search'
           });
-        } catch (error) {
-          console.error('Error fetching from CSV sources:', error);
-        }
-
-        // Add cached results as well
-        results.push(...stockResults, ...mutualFundResults, ...commodityResults);
+        });
+      } catch (error) {
+        console.error('Error fetching from CSV sources:', error);
       }
 
       // Remove duplicates based on name and symbol
@@ -164,8 +159,18 @@ export const useOptimizedSearch = () => {
         )
       );
 
-      // Limit results to top 10
-      setSearchResults(uniqueResults.slice(0, 10));
+      // Log search results for debugging
+      console.log(`Search for "${query}" found:`, {
+        totalResults: results.length,
+        uniqueResults: uniqueResults.length,
+        mutualFundResults: results.filter(r => r.type === 'mutual_fund').length,
+        stockResults: results.filter(r => r.type === 'stock').length,
+        cachedResults: results.filter(r => r.source === 'cached').length,
+        searchResults: results.filter(r => r.source === 'search').length
+      });
+
+      // Limit results to top 50
+      setSearchResults(uniqueResults.slice(0, 50));
 
     } catch (error) {
       console.error('Error performing search:', error);
