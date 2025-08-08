@@ -7,6 +7,8 @@ interface CurrentHoldingsTableProps {
   holdings: Holding[];
   onRefreshPrices?: () => void;
   isLoadingPrices?: boolean;
+  isRefreshingPrices?: boolean;
+  lastRefreshTime?: number;
 }
 
 // Tooltip component for large annual yield values
@@ -30,7 +32,13 @@ const Tooltip: React.FC<{ content: string; children: React.ReactNode }> = ({ con
   );
 };
 
-const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, onRefreshPrices, isLoadingPrices }) => {
+const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ 
+  holdings, 
+  onRefreshPrices, 
+  isLoadingPrices, 
+  isRefreshingPrices = false,
+  lastRefreshTime = 0 
+}) => {
   const [columnWidths, setColumnWidths] = useState({
     name: 180,
     netQuantity: 120,
@@ -142,7 +150,16 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
   const tableWidth = Object.values(columnWidths).reduce((sum, width) => sum + width, 0);
 
   return (
-    <div className="p-4 bg-white">
+    <div className="p-4 bg-white relative">
+      {/* Loading overlay when refreshing prices */}
+      {isRefreshingPrices && (
+        <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-sm text-gray-600">Refreshing prices...</p>
+          </div>
+        </div>
+      )}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xs font-semibold text-gray-800">Current Holdings</h2>
         <div className="flex items-center gap-3">
@@ -151,21 +168,41 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
           </div>
           
           {onRefreshPrices && (
-            <button
-              onClick={onRefreshPrices}
-              disabled={isLoadingPrices}
-              className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
-                isLoadingPrices
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200'
-              }`}
-            >
-              <RefreshCw 
-                size={12} 
-                className={isLoadingPrices ? 'animate-spin' : ''} 
-              />
-              {isLoadingPrices ? 'Updating...' : 'Refresh Prices'}
-            </button>
+            <div className="flex items-center gap-2">
+              {lastRefreshTime > 0 && (
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">
+                    Last updated: {new Date(lastRefreshTime).toLocaleTimeString()}
+                  </span>
+                  {/* Show cache status indicator */}
+                  {(() => {
+                    const now = Date.now();
+                    const timeSinceRefresh = now - lastRefreshTime;
+                    const isFresh = timeSinceRefresh < 10 * 60 * 1000; // 10 minutes
+                    return (
+                      <div className={`w-2 h-2 rounded-full ${isFresh ? 'bg-green-500' : 'bg-yellow-500'}`} 
+                           title={isFresh ? 'Cache is fresh' : 'Cache may be stale'}>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+              <button
+                onClick={onRefreshPrices}
+                disabled={isRefreshingPrices}
+                className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                  isRefreshingPrices
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200'
+                }`}
+              >
+                <RefreshCw 
+                  size={12} 
+                  className={isRefreshingPrices ? 'animate-spin' : ''} 
+                />
+                {isRefreshingPrices ? 'Refreshing...' : 'Refresh Prices'}
+              </button>
+            </div>
           )}
         </div>
       </div>

@@ -28,6 +28,8 @@ function Dashboard() {
     hasLoadedInitialData,
     error,
     isLoadingPrices,
+    isRefreshingPrices,
+    lastRefreshTime,
     saveNotification,
     setSaveNotification,
     setFilters,
@@ -184,6 +186,8 @@ function Dashboard() {
                       holdings={filteredHoldings} 
                       onRefreshPrices={updateAllPrices}
                       isLoadingPrices={isLoadingPrices}
+                      isRefreshingPrices={isRefreshingPrices}
+                      lastRefreshTime={lastRefreshTime}
                     />
                   </ErrorBoundary>
                 ) : (

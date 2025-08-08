@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Trade, Summary, FilterState, Holding } from '../types/portfolio';
 import { getMutualFundService } from '../services/mutualFundApi';
 import { getStockPriceService } from '../services/stockPriceService';
@@ -228,6 +228,8 @@ export const usePortfolio = () => {
     return savedCache || {};
   });
   const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+  const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
 
   // Enhanced price fetching with caching
   const fetchRealTimePrice = async (symbol: string, type: string, isin?: string): Promise<number> => {
@@ -236,7 +238,7 @@ export const usePortfolio = () => {
       ? `${symbol}-${isin}-${type}` 
       : `${symbol}-${type}`;
     const now = Date.now();
-    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+    const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes for better caching
     
     // Check cache first
     if (priceCache[cacheKey] && (now - priceCache[cacheKey].timestamp) < CACHE_DURATION) {
@@ -270,18 +272,31 @@ export const usePortfolio = () => {
       if (type === 'mutual_fund') {
         const mutualFundService = getMutualFundService();
         try {
-          const realNAV = await mutualFundService.getNAV(symbol);
-          if (realNAV !== null) {
-            // Cache the real NAV
-            setPriceCache(prev => {
-              const updatedCache = {
-                ...prev,
-                [cacheKey]: { price: realNAV, timestamp: now }
-              };
-              saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
-              return updatedCache;
-            });
-            return realNAV;
+          console.log(`Fetching NAV for mutual fund:`, { symbol, isin, type, cacheKey });
+          
+          // For mutual funds, always use ISIN for NAV lookup
+          if (isin) {
+            const navData = await mutualFundService.searchByISIN(isin);
+            if (navData) {
+              const realNAV = navData.nav;
+              console.log(`Found NAV by ISIN:`, { isin, nav: realNAV, schemeName: navData.scheme_name });
+              
+              // Cache the real NAV
+              setPriceCache(prev => {
+                const updatedCache = {
+                  ...prev,
+                  [cacheKey]: { price: realNAV, timestamp: now }
+                };
+                saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, updatedCache);
+                return updatedCache;
+              });
+              console.log(`Cached NAV:`, { cacheKey, nav: realNAV });
+              return realNAV;
+            } else {
+              console.warn(`No NAV found for ISIN: ${isin}`);
+            }
+          } else {
+            console.warn(`No ISIN provided for mutual fund: ${symbol}`);
           }
         } catch (error) {
           console.warn(`Mutual Fund API failed for ${symbol}, using mock data:`, error);
@@ -436,6 +451,21 @@ export const usePortfolio = () => {
 
   // Batch update prices for all holdings
   const updateAllPrices = async () => {
+    // Check if we're already refreshing
+    if (isRefreshingPrices) {
+      console.log('Price refresh already in progress, skipping...');
+      return;
+    }
+
+    // Check if we need to refresh (cache is still fresh)
+    const now = Date.now();
+    const CACHE_FRESH_DURATION = 10 * 60 * 1000; // 10 minutes
+    if (lastRefreshTime > 0 && (now - lastRefreshTime) < CACHE_FRESH_DURATION) {
+      console.log('Cache is still fresh, skipping refresh...');
+      return;
+    }
+
+    setIsRefreshingPrices(true);
     setIsLoadingPrices(true);
     
     try {
@@ -543,6 +573,8 @@ export const usePortfolio = () => {
       console.error('Error updating prices:', error);
     } finally {
       setIsLoadingPrices(false);
+      setIsRefreshingPrices(false);
+      setLastRefreshTime(Date.now());
     }
   };
 
@@ -717,7 +749,7 @@ export const usePortfolio = () => {
     return rate * 100; // Convert to percentage
   };
 
-  const calculateCurrentHoldings = (): Holding[] => {
+  const calculateCurrentHoldings = React.useMemo((): Holding[] => {
     const holdingsMap = new Map<string, {
       name: string;
       investmentType: string;
@@ -825,6 +857,15 @@ export const usePortfolio = () => {
           : `${name}-${data.investmentType}`;
         const currentPrice = priceCache[cacheKey]?.price || averageBuyPrice; // Fallback to average buy price
         
+        console.log(`Holdings calculation for "${name}":`, {
+          investmentType: data.investmentType,
+          isin: data.isin,
+          cacheKey,
+          cachedPrice: priceCache[cacheKey]?.price,
+          currentPrice,
+          averageBuyPrice
+        });
+        
         const currentValue = netQuantity * currentPrice;
         const gainLossAmount = currentValue - totalInvestedAmount;
         const gainLossPercent = totalInvestedAmount > 0 ? (gainLossAmount / totalInvestedAmount) * 100 : 0;
@@ -888,7 +929,7 @@ export const usePortfolio = () => {
     }
     
     return holdings.sort((a, b) => b.currentValue - a.currentValue);
-  };
+  }, [trades, priceCache]); // Memoize based on trades and price cache changes
 
   const calculateBucketSummary = (): BucketSummary[] => {
     const bucketMap = new Map<string, {
@@ -1035,16 +1076,16 @@ export const usePortfolio = () => {
   useEffect(() => {
     saveToLocalStorage(STORAGE_KEYS.BUCKET_TARGETS + '_purposes', bucketPurposes);
   }, [bucketPurposes]);
-  // Clean up old price cache entries (older than 1 hour)
+  // Clean up old price cache entries (older than 2 hours)
   useEffect(() => {
     const cleanupCache = () => {
       const now = Date.now();
-      const oneHour = 60 * 60 * 1000;
+      const twoHours = 2 * 60 * 60 * 1000;
       
       setPriceCache(prev => {
         const cleaned = Object.fromEntries(
           Object.entries(prev).filter(([_, data]) => 
-            (now - data.timestamp) < oneHour
+            (now - data.timestamp) < twoHours
           )
         );
         saveToLocalStorage(STORAGE_KEYS.PRICE_CACHE, cleaned);
@@ -1052,8 +1093,8 @@ export const usePortfolio = () => {
       });
     };
 
-    // Clean up cache every 30 minutes
-    const interval = setInterval(cleanupCache, 30 * 60 * 1000);
+    // Clean up cache every hour
+    const interval = setInterval(cleanupCache, 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
   return {
@@ -1067,6 +1108,8 @@ export const usePortfolio = () => {
     updateRealTimePrices,
     updateAllPrices,
     isLoadingPrices,
+    isRefreshingPrices,
+    lastRefreshTime,
     calculateSummary,
     calculateCurrentHoldings,
     calculateBucketSummary,

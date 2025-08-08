@@ -117,6 +117,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   });
   const [error, setError] = useState<string | null>(null);
   const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+  const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
   const [subscriptions, setSubscriptions] = useState<{
     trades?: () => void;
     holdings?: () => void;
@@ -153,7 +155,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
 
   // Enhanced price cache with retry logic and error tracking
   const [priceCache, setPriceCache] = useState<{ [key: string]: PriceCacheEntry }>({});
-  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes for better caching
   const MAX_RETRY_COUNT = 3;
 
   // Performance optimization: Memoized unique investments
@@ -227,17 +229,20 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       // Try Mutual Fund API for mutual funds
       if (!price && type === 'mutual_fund') {
         const mutualFundService = getMutualFundService();
-        // For mutual funds, try to get NAV by ISIN first, then by name
-        if (symbol.length === 12) { // ISIN is typically 12 characters
+        console.log(`Firestore: Fetching NAV for mutual fund:`, { symbol, isin, type, cacheKey });
+        
+        // For mutual funds, always use ISIN for NAV lookup
+        if (isin) {
           // Try to get NAV by ISIN
-          const navData = await mutualFundService.searchByISIN(symbol);
+          const navData = await mutualFundService.searchByISIN(isin);
           if (navData) {
             price = navData.nav;
+            console.log(`Firestore: Found NAV by ISIN:`, { isin, nav: price, schemeName: navData.scheme_name });
+          } else {
+            console.warn(`Firestore: No NAV found for ISIN: ${isin}`);
           }
-        }
-        // If not found by ISIN, try by name
-        if (!price) {
-          price = await mutualFundService.getNavPrice(symbol);
+        } else {
+          console.warn(`Firestore: No ISIN provided for mutual fund: ${symbol}`);
         }
       }
       
@@ -466,6 +471,15 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         }
         
         let currentPrice = priceCache[cacheKey]?.price || averageBuyPrice;
+        
+        console.log(`Firestore Holdings calculation for "${name}":`, {
+          investmentType: data.investmentType,
+          isin: data.isin,
+          cacheKey,
+          cachedPrice: priceCache[cacheKey]?.price,
+          currentPrice,
+          averageBuyPrice
+        });
         let currentValue = netQuantity * currentPrice;
         
         // Handle Fixed Deposit calculations
@@ -1149,6 +1163,21 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
 
   // Enhanced price update with batch operations and better performance
   const updateAllPrices = async () => {
+    // Check if we're already refreshing
+    if (isRefreshingPrices) {
+      console.log('Price refresh already in progress, skipping...');
+      return;
+    }
+
+    // Check if we need to refresh (cache is still fresh)
+    const now = Date.now();
+    const CACHE_FRESH_DURATION = 10 * 60 * 1000; // 10 minutes
+    if (lastRefreshTime > 0 && (now - lastRefreshTime) < CACHE_FRESH_DURATION) {
+      console.log('Cache is still fresh, skipping refresh...');
+      return;
+    }
+
+    setIsRefreshingPrices(true);
     setIsLoadingPrices(true);
     setLoadingStates(prev => ({ ...prev, prices: true }));
     
@@ -1202,6 +1231,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       setError('Failed to update prices');
     } finally {
       setIsLoadingPrices(false);
+      setIsRefreshingPrices(false);
+      setLastRefreshTime(Date.now());
       setLoadingStates(prev => ({ ...prev, prices: false }));
     }
   };
@@ -1290,34 +1321,35 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     console.log(`Updated price cache for ${isin} with NAV: ${nav}`);
   }, []);
 
-  // Auto-refresh holdings when trades change
-  useEffect(() => {
-    if (trades.length > 0 && hasLoadedInitialData) {
-      // Debounce the price update to avoid excessive API calls
-      const timeoutId = setTimeout(() => {
-        updateAllPrices();
-      }, 1000); // 1 second delay
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [trades.length, hasLoadedInitialData]); // Only trigger on trades count change
+  // Disabled auto-refresh to prevent continuous updates
+  // Users can manually refresh when needed
+  // useEffect(() => {
+  //   if (trades.length > 0 && hasLoadedInitialData) {
+  //     // Debounce the price update to avoid excessive API calls
+  //     const timeoutId = setTimeout(() => {
+  //       updateAllPrices();
+  //     }, 1000); // 1 second delay
+  //     
+  //     return () => clearTimeout(timeoutId);
+  //   }
+  // }, [trades.length, hasLoadedInitialData]); // Only trigger on trades count change
 
-  // Auto-refresh when trades are modified (add/update/delete)
-  useEffect(() => {
-    if (trades.length > 0 && hasLoadedInitialData) {
-      // Create a hash of trades to detect changes
-      const tradesHash = trades.map(t => `${t.id}-${t.name}-${t.quantity}-${t.buyRate}`).join('|');
-      
-      const timeoutId = setTimeout(() => {
-        // Only update if we have trades and they've changed
-        if (trades.length > 0) {
-          updateAllPrices();
-        }
-      }, 1500); // 1.5 second delay for modifications
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [trades, hasLoadedInitialData]); // Trigger on any trade changes
+  // Disabled auto-refresh when trades are modified to prevent continuous updates
+  // useEffect(() => {
+  //   if (trades.length > 0 && hasLoadedInitialData) {
+  //     // Create a hash of trades to detect changes
+  //     const tradesHash = trades.map(t => `${t.id}-${t.name}-${t.quantity}-${t.buyRate}`).join('|');
+  //     
+  //     const timeoutId = setTimeout(() => {
+  //       // Only update if we have trades and they've changed
+  //       if (trades.length > 0) {
+  //         updateAllPrices();
+  //       }
+  //     }, 1500); // 1.5 second delay for modifications
+  //     
+  //     return () => clearTimeout(timeoutId);
+  //   }
+  // }, [trades, hasLoadedInitialData]); // Trigger on any trade changes
 
   // Enhanced return object with new features
   return {
@@ -1335,6 +1367,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     hasLoadedInitialData,
     error,
     isLoadingPrices,
+    isRefreshingPrices,
+    lastRefreshTime,
     filters,
     priceCache, // New: Expose price cache for debugging
     saveNotification,

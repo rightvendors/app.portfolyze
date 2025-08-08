@@ -133,11 +133,11 @@ export const useOptimizedSearch = () => {
 
         // Search mutual funds from CSV
         const fundSuggestions = await mutualFundService.getFundSuggestions(query, 50);
-        fundSuggestions.forEach(fundName => {
+        fundSuggestions.forEach(fund => {
           results.push({
-            id: `mf-${fundName}`,
-            name: fundName,
-            symbol: fundName,
+            id: `mf-${fund.isin}`,
+            name: fund.name,
+            symbol: fund.isin, // Use ISIN as symbol for mutual funds
             type: 'mutual_fund',
             price: 0,
             change: 0,

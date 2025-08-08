@@ -371,6 +371,12 @@ const TradesTable: React.FC<TradesTableProps> = ({
           bucketAllocation: rowData['Bucket Allocation'] || 'bucket1a'
         };
 
+        // Validate mutual funds have ISIN
+        if (tradeData.investmentType === 'mutual_fund' && !tradeData.isin) {
+          console.warn(`Skipping mutual fund "${tradeData.name}" - no ISIN provided`);
+          continue;
+        }
+
         if (tradeData.name && tradeData.quantity > 0 && tradeData.buyRate > 0) {
           validTrades.push(tradeData);
         }

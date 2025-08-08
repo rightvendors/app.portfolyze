@@ -28,7 +28,8 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
     date: '',
     quantity: '',
     buyRate: '',
-    transactionType: 'buy'
+    transactionType: 'buy',
+    bucketAllocation: 'bucket1a'
   });
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -45,6 +46,16 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
     { value: 'silver', label: 'Silver' },
     { value: 'bond', label: 'Bond' },
     { value: 'fixed_deposit', label: 'Fixed Deposit' }
+  ];
+
+  const bucketOptions = [
+    { value: 'bucket1a', label: 'Bucket 1A' },
+    { value: 'bucket1b', label: 'Bucket 1B' },
+    { value: 'bucket1c', label: 'Bucket 1C' },
+    { value: 'bucket1d', label: 'Bucket 1D' },
+    { value: 'bucket1e', label: 'Bucket 1E' },
+    { value: 'bucket2', label: 'Bucket 2' },
+    { value: 'bucket3', label: 'Bucket 3' }
   ];
 
   const popularInvestments = [
@@ -64,7 +75,8 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
         date: trade.date,
         quantity: trade.quantity.toString(),
         buyRate: trade.buyRate.toString(),
-        transactionType: trade.transactionType
+        transactionType: trade.transactionType,
+        bucketAllocation: trade.bucketAllocation || 'bucket1a'
       });
       
       // Set selected investment based on current trade
@@ -227,6 +239,7 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
       quantity: parseFloat(tradeData.quantity),
       buyRate: parseFloat(tradeData.buyRate),
       transactionType: tradeData.transactionType as 'buy' | 'sell',
+      bucketAllocation: tradeData.bucketAllocation,
       name: selectedInvestment.name,
       investmentType: selectedInvestment.type,
       isin: selectedInvestment.type === 'mutual_fund' ? selectedInvestment.symbol : undefined
@@ -419,6 +432,21 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="0.00"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Bucket Allocation</label>
+                    <select
+                      value={tradeData.bucketAllocation}
+                      onChange={(e) => setTradeData({ ...tradeData, bucketAllocation: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {bucketOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Total Amount Display */}

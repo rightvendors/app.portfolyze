@@ -129,6 +129,13 @@ class MutualFundApiService {
       );
     }
 
+    console.log(`Name search for "${schemeName}":`, {
+      searchKey,
+      totalNAVs: allNAVs.length,
+      found: found ? found.scheme_name : null,
+      availableNames: allNAVs.map(nav => nav.scheme_name).slice(0, 5) // Show first 5 names for debugging
+    });
+
     return found || null;
   }
 
@@ -142,6 +149,12 @@ class MutualFundApiService {
     const found = allNAVs.find(nav => 
       nav.isin && nav.isin.toUpperCase() === searchKey
     );
+
+    console.log(`ISIN search for "${searchKey}":`, {
+      totalNAVs: allNAVs.length,
+      found: found ? found.scheme_name : null,
+      availableISINs: allNAVs.map(nav => nav.isin).slice(0, 5) // Show first 5 ISINs for debugging
+    });
 
     return found || null;
   }
@@ -166,6 +179,12 @@ class MutualFundApiService {
         nav: 785.32,
         date: new Date().toISOString().split('T')[0],
         isin: 'INF179K01158'
+      },
+      {
+        scheme_name: 'HDFC Focused Fund - GROWTH PLAN',
+        nav: 225.36,
+        date: new Date().toISOString().split('T')[0],
+        isin: 'INF179K01159'
       },
       {
         scheme_name: 'ICICI Prudential Bluechip Fund Direct Growth',
@@ -212,17 +231,19 @@ class MutualFundApiService {
     ];
   }
 
-  // Get suggestive list of fund names based on partial input
-  async getFundSuggestions(partialName: string, maxResults = 100): Promise<string[]> {
+  // Get suggestive list of fund names and ISINs based on partial input
+  async getFundSuggestions(partialName: string, maxResults = 100): Promise<{ name: string; isin: string }[]> {
     const allNAVs = await this.getAllNAVs();
     const searchKey = partialName.toLowerCase().trim();
 
     const matches = allNAVs
       .filter(nav => nav.scheme_name.toLowerCase().includes(searchKey))
-      .map(nav => nav.scheme_name);
+      .map(nav => ({ name: nav.scheme_name, isin: nav.isin }));
 
-    // Remove duplicates and limit results
-    const uniqueMatches = [...new Set(matches)].slice(0, maxResults);
+    // Remove duplicates based on name and limit results
+    const uniqueMatches = matches.filter((match, index, self) => 
+      index === self.findIndex(m => m.name.toLowerCase() === match.name.toLowerCase())
+    ).slice(0, maxResults);
 
     // Log debugging information
     console.log(`Mutual fund search for "${partialName}" found:`, {

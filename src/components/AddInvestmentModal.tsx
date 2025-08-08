@@ -335,6 +335,12 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
   const handleAddTrade = () => {
     if (!selectedInvestment) return;
 
+    // Validate that mutual funds have an ISIN
+    if (selectedInvestment.type === 'mutual_fund' && !selectedInvestment.symbol) {
+      alert('Error: Mutual fund must have an ISIN number. Please select a valid mutual fund from the suggestions.');
+      return;
+    }
+
     const newTrade = {
       date: tradeData.date,
       investmentType: selectedInvestment.type,
