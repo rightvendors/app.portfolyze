@@ -230,8 +230,11 @@ export const usePortfolio = () => {
   const [isLoadingPrices, setIsLoadingPrices] = useState(false);
 
   // Enhanced price fetching with caching
-  const fetchRealTimePrice = async (symbol: string, type: string): Promise<number> => {
-    const cacheKey = `${symbol}-${type}`;
+  const fetchRealTimePrice = async (symbol: string, type: string, isin?: string): Promise<number> => {
+    // For mutual funds, use ISIN if available for cache key
+    const cacheKey = type === 'mutual_fund' && isin 
+      ? `${symbol}-${isin}-${type}` 
+      : `${symbol}-${type}`;
     const now = Date.now();
     const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
     
@@ -444,13 +447,17 @@ export const usePortfolio = () => {
       // Get unique investments from trades
       trades.forEach(trade => {
         if (trade.name.trim()) {
-          uniqueInvestments.set(trade.name, trade.investmentType);
+          // For mutual funds, include ISIN in the key if available
+          const key = trade.investmentType === 'mutual_fund' && trade.isin 
+            ? `${trade.name}-${trade.isin}` 
+            : trade.name;
+          uniqueInvestments.set(key, trade.investmentType);
         }
       });
       
       // Use Stock Price Service for stocks
       const stockInvestments = Array.from(uniqueInvestments.entries())
-        .filter(([name, type]) => type === 'stock');
+        .filter(([key, type]) => type === 'stock');
       
       if (stockInvestments.length > 0) {
         try {
@@ -478,7 +485,7 @@ export const usePortfolio = () => {
       
       // Use Mutual Fund API for mutual funds
       const mutualFundInvestments = Array.from(uniqueInvestments.entries())
-        .filter(([name, type]) => type === 'mutual_fund');
+        .filter(([key, type]) => type === 'mutual_fund');
       
       if (mutualFundInvestments.length > 0) {
         try {
@@ -486,10 +493,15 @@ export const usePortfolio = () => {
           await mutualFundService.getAllNAVs();
           
           // Update cache with real NAVs
-          for (const [symbol, type] of mutualFundInvestments) {
-            const nav = await mutualFundService.getNAV(symbol);
+          for (const [key, type] of mutualFundInvestments) {
+            // Extract name and ISIN from the key
+            const parts = key.split('-');
+            const name = parts[0];
+            const isin = parts.length > 1 ? parts[1] : undefined;
+            
+            const nav = await mutualFundService.getNAV(name);
             if (nav !== null) {
-              const cacheKey = `${symbol}-${type}`;
+              const cacheKey = isin ? `${name}-${isin}-${type}` : `${name}-${type}`;
               setPriceCache(prev => {
                 const updatedCache = {
                   ...prev,
@@ -513,7 +525,13 @@ export const usePortfolio = () => {
         const batch = investments.slice(i, i + batchSize);
         
         await Promise.all(
-          batch.map(([name, type]) => fetchRealTimePrice(name, type))
+          batch.map(([key, type]) => {
+            // Extract name and ISIN from the key
+            const parts = key.split('-');
+            const name = parts[0];
+            const isin = parts.length > 1 ? parts[1] : undefined;
+            return fetchRealTimePrice(name, type, isin);
+          })
         );
         
         // Small delay between batches
@@ -529,15 +547,18 @@ export const usePortfolio = () => {
   };
 
   // Get current price from cache or fetch
-  const getCurrentPrice = async (symbol: string, type: string): Promise<number> => {
-    const cacheKey = `${symbol}-${type}`;
+  const getCurrentPrice = async (symbol: string, type: string, isin?: string): Promise<number> => {
+    // For mutual funds, use ISIN if available for cache key
+    const cacheKey = type === 'mutual_fund' && isin 
+      ? `${symbol}-${isin}-${type}` 
+      : `${symbol}-${type}`;
     const cached = priceCache[cacheKey];
     
     if (cached && (Date.now() - cached.timestamp) < 5 * 60 * 1000) {
       return cached.price;
     }
     
-    return await fetchRealTimePrice(symbol, type);
+    return await fetchRealTimePrice(symbol, type, isin);
   };
 
   const addTrade = (trade: Omit<Trade, 'id' | 'buyAmount' | 'presentAmount' | 'profitPercent' | 'annualizedReturn'>) => {
@@ -587,7 +608,7 @@ export const usePortfolio = () => {
   const updateRealTimePrices = async () => {
     const updatedTrades = await Promise.all(
       trades.map(async (trade) => {
-        const presentRate = await fetchRealTimePrice(trade.name, trade.investmentType);
+        const presentRate = await fetchRealTimePrice(trade.name, trade.investmentType, trade.isin);
         const presentAmount = trade.quantity * presentRate;
         const profitPercent = ((presentRate - trade.buyRate) / trade.buyRate) * 100;
         const annualizedReturn = calculateAnnualizedReturn(trade.buyRate, presentRate, trade.date);
@@ -700,6 +721,7 @@ export const usePortfolio = () => {
     const holdingsMap = new Map<string, {
       name: string;
       investmentType: string;
+      isin?: string;
       bucketAllocation?: string;
       transactions: Array<{
         date: string;
@@ -707,32 +729,41 @@ export const usePortfolio = () => {
         quantity: number;
         price: number;
         amount: number;
+        isin?: string;
       }>;
     }>();
 
-    // Group trades by name
+    // Group trades by name (for stocks) or by ISIN (for mutual funds)
     trades.forEach(trade => {
       // Skip trades with empty names
       if (!trade.name || trade.name.trim() === '') {
         return;
       }
       
-      if (!holdingsMap.has(trade.name)) {
-        holdingsMap.set(trade.name, {
+      // For mutual funds, use ISIN if available, otherwise use name
+      // For other investment types, use name
+      const groupingKey = trade.investmentType === 'mutual_fund' && trade.isin 
+        ? `${trade.name}-${trade.isin}` 
+        : trade.name;
+      
+      if (!holdingsMap.has(groupingKey)) {
+        holdingsMap.set(groupingKey, {
           name: trade.name,
           investmentType: trade.investmentType,
+          isin: trade.isin,
           bucketAllocation: trade.bucketAllocation,
           transactions: []
         });
       }
       
-      const holding = holdingsMap.get(trade.name)!;
+      const holding = holdingsMap.get(groupingKey)!;
       holding.transactions.push({
         date: trade.date,
         type: trade.transactionType,
         quantity: trade.quantity,
         price: trade.buyRate,
-        amount: trade.buyAmount
+        amount: trade.buyAmount,
+        isin: trade.isin
       });
     });
 
@@ -788,7 +819,10 @@ export const usePortfolio = () => {
         const averageBuyPrice = totalInvestedAmount / netQuantity;
         
         // Get current price from cache
-        const cacheKey = `${name}-${data.investmentType}`;
+        // For mutual funds, use ISIN if available for cache key
+        const cacheKey = data.investmentType === 'mutual_fund' && data.isin
+          ? `${name}-${data.isin}-${data.investmentType}`
+          : `${name}-${data.investmentType}`;
         const currentPrice = priceCache[cacheKey]?.price || averageBuyPrice; // Fallback to average buy price
         
         const currentValue = netQuantity * currentPrice;

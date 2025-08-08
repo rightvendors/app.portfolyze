@@ -245,12 +245,24 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({ holdings, o
             <div className={`h-8 px-3 text-xs font-bold border-r border-gray-300 flex items-center justify-end ${
               averageAnnualYield >= 0 ? 'text-green-600' : 'text-red-600'
             }`} style={{ width: columnWidths.annualYield }}>
-              {formatPercent(averageAnnualYield)}
+              {averageAnnualYield > 1000 ? (
+                <Tooltip content={`${formatPercent(averageAnnualYield)}`}>
+                  <span className="cursor-help">…</span>
+                </Tooltip>
+              ) : (
+                formatPercent(averageAnnualYield)
+              )}
             </div>
             <div className={`h-8 px-3 text-xs font-bold border-r border-gray-300 flex items-center justify-end ${
               averageXIRR >= 0 ? 'text-green-600' : 'text-red-600'
             }`} style={{ width: columnWidths.xirr }}>
-              {formatPercent(averageXIRR)}
+              {averageXIRR > 1000 ? (
+                <Tooltip content={`${formatPercent(averageXIRR)}`}>
+                  <span className="cursor-help">…</span>
+                </Tooltip>
+              ) : (
+                formatPercent(averageXIRR)
+              )}
             </div>
           </div>
 

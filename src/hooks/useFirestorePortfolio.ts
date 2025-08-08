@@ -161,8 +161,10 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     const investmentMap = new Map<string, { type: string; lastTradeDate: string; isin?: string }>();
     trades.forEach(trade => {
       if (trade.name.trim()) {
-        // For mutual funds, use ISIN as key if available, otherwise use name
-        const key = (trade.investmentType === 'mutual_fund' && trade.isin) ? trade.isin : trade.name;
+        // For mutual funds, include ISIN in the key if available
+        const key = trade.investmentType === 'mutual_fund' && trade.isin 
+          ? `${trade.name}-${trade.isin}` 
+          : trade.name;
         
         const existing = investmentMap.get(key);
         if (!existing || trade.date > existing.lastTradeDate) {
@@ -184,8 +186,11 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   }, []);
 
   // Enhanced price fetching with retry logic and better error handling
-  const fetchRealTimePrice = useCallback(async (symbol: string, type: string): Promise<number> => {
-    const cacheKey = `${symbol}-${type}`;
+  const fetchRealTimePrice = useCallback(async (symbol: string, type: string, isin?: string): Promise<number> => {
+    // For mutual funds, use ISIN if available for cache key
+    const cacheKey = type === 'mutual_fund' && isin 
+      ? `${symbol}-${isin}-${type}` 
+      : `${symbol}-${type}`;
     const now = Date.now();
     const cacheEntry = priceCache[cacheKey];
     
@@ -455,7 +460,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         // For mutual funds, use ISIN to look up NAV price, otherwise use name
         let cacheKey: string;
         if (data.investmentType === 'mutual_fund' && data.isin) {
-          cacheKey = `${data.isin}-${data.investmentType}`;
+          cacheKey = `${name}-${data.isin}-${data.investmentType}`;
         } else {
           cacheKey = `${name}-${data.investmentType}`;
         }
@@ -1019,7 +1024,10 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       // Clear any cached data for this trade
       const tradeToDelete = originalTrade;
       if (tradeToDelete) {
-        const cacheKey = `${tradeToDelete.name}-${tradeToDelete.investmentType}`;
+        // For mutual funds, use ISIN if available for cache key
+        const cacheKey = tradeToDelete.investmentType === 'mutual_fund' && tradeToDelete.isin
+          ? `${tradeToDelete.name}-${tradeToDelete.isin}-${tradeToDelete.investmentType}`
+          : `${tradeToDelete.name}-${tradeToDelete.investmentType}`;
         setPriceCache(prev => {
           const newCache = { ...prev };
           delete newCache[cacheKey];
@@ -1157,7 +1165,11 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         
         const batchResults = await Promise.allSettled(
           batch.map(async ([key, data]) => {
-            const price = await fetchRealTimePrice(key, data.type);
+            // Extract name and ISIN from the key
+            const parts = key.split('-');
+            const name = parts[0];
+            const isin = parts.length > 1 ? parts[1] : data.isin;
+            const price = await fetchRealTimePrice(name, data.type, isin);
             return { name: key, type: data.type, price, isin: data.isin };
           })
         );
@@ -1261,8 +1273,11 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   }, [user, calculatedHoldings]);
 
   // Function to update price cache with NAV data
-  const updatePriceCacheWithNAV = useCallback((isin: string, nav: number) => {
-    const cacheKey = `${isin}-mutual_fund`;
+  const updatePriceCacheWithNAV = useCallback((isin: string, nav: number, name?: string) => {
+    // For mutual funds, use name-ISIN-investmentType format if name is provided
+    const cacheKey = name 
+      ? `${name}-${isin}-mutual_fund`
+      : `${isin}-mutual_fund`;
     setPriceCache(prev => ({
       ...prev,
       [cacheKey]: {
