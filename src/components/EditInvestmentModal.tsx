@@ -237,16 +237,55 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
   const performSave = () => {
     if (!trade || !selectedInvestment) return;
 
-    const updates: Partial<Trade> = {
-      date: tradeData.date,
-      quantity: parseFloat(tradeData.quantity),
-      buyRate: parseFloat(tradeData.buyRate),
-      transactionType: tradeData.transactionType as 'buy' | 'sell',
-      bucketAllocation: tradeData.bucketAllocation,
-      name: selectedInvestment.name,
-      investmentType: selectedInvestment.type,
-      isin: selectedInvestment.type === 'mutual_fund' ? selectedInvestment.symbol : undefined
-    };
+    const updates: Partial<Trade> = {};
+
+    // Date
+    if (tradeData.date && tradeData.date !== trade.date) {
+      updates.date = tradeData.date;
+    }
+
+    // Quantity
+    const quantityStr = (tradeData.quantity ?? '').toString().trim();
+    const parsedQuantity = quantityStr === '' ? undefined : Number(quantityStr);
+    if (Number.isFinite(parsedQuantity) && parsedQuantity !== trade.quantity) {
+      updates.quantity = parsedQuantity as number;
+    }
+
+    // Buy rate
+    const buyRateStr = (tradeData.buyRate ?? '').toString().trim();
+    const parsedBuyRate = buyRateStr === '' ? undefined : Number(buyRateStr);
+    if (Number.isFinite(parsedBuyRate) && parsedBuyRate !== trade.buyRate) {
+      updates.buyRate = parsedBuyRate as number;
+    }
+
+    // Transaction type
+    if (tradeData.transactionType && tradeData.transactionType !== trade.transactionType) {
+      updates.transactionType = tradeData.transactionType as 'buy' | 'sell';
+    }
+
+    // Bucket allocation (treat undefined and empty string as same)
+    const currentBucket = (trade.bucketAllocation || '').trim();
+    const newBucket = (tradeData.bucketAllocation || '').trim();
+    if (newBucket !== currentBucket) {
+      updates.bucketAllocation = newBucket;
+    }
+
+    // Selected investment fields (only if changed)
+    if (selectedInvestment.name && selectedInvestment.name !== trade.name) {
+      updates.name = selectedInvestment.name;
+    }
+    if (selectedInvestment.type && selectedInvestment.type !== trade.investmentType) {
+      updates.investmentType = selectedInvestment.type;
+    }
+    if (selectedInvestment.type === 'mutual_fund') {
+      const newIsin = selectedInvestment.symbol || '';
+      if (newIsin && newIsin !== (trade.isin || '')) {
+        updates.isin = newIsin;
+      }
+    }
+
+    // Only proceed if something actually changed and is valid
+    if (Object.keys(updates).length === 0) return;
 
     onUpdateTrade(trade.id, updates);
   };

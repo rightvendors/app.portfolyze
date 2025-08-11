@@ -1025,7 +1025,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       const originalTrade = trades.find(t => t.id === id);
       if (!originalTrade) throw new Error('Trade not found');
       
-      const updatedTrade = { ...updates };
+      const updatedTrade = { ...updates } as Partial<Trade>;
       
       // Calculate buyAmount when quantity OR buyRate changes
       const newQuantity = updates.quantity !== undefined ? updates.quantity : originalTrade.quantity;
@@ -1033,6 +1033,12 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       
       if (updates.quantity !== undefined || updates.buyRate !== undefined) {
         updatedTrade.buyAmount = newQuantity * newBuyRate;
+      }
+      // If nothing material changed, short-circuit to avoid needless write
+      const keys = Object.keys(updatedTrade);
+      if (keys.length === 0) {
+        setSaveNotification({ show: true, message: 'No changes to update', type: 'success' });
+        return;
       }
       
       setSaveNotification({ show: true, message: 'Updating trade...', type: 'loading' });
@@ -1050,6 +1056,11 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       await firestoreService.updateTrade(user.uid, id, updatedTrade);
       clearTimeout(spinnerTimeout);
       setSaveNotification({ show: true, message: 'Trade updated successfully!', type: 'success' });
+      // Ensure holdings/buckets recompute so UI reflects change instantly
+      const newHoldings = calculateCurrentHoldings();
+      setCalculatedHoldings(newHoldings);
+      const newBuckets = calculateBucketSummary();
+      setCalculatedBuckets(newBuckets);
     } catch (error) {
       // Rollback local state if Firebase save failed
       if (originalTrade) {
