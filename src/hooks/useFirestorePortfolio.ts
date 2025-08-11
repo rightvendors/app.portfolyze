@@ -1041,11 +1041,11 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         return;
       }
       
-      setSaveNotification({ show: true, message: 'Updating trade...', type: 'loading' });
-      // Safety timeout to avoid infinite spinner if backend is slow
+      // Do not show global loading on field change; saving is explicit via button
+      // Keep a quiet timeout only for long-running requests (no visible message here)
       const spinnerTimeout = setTimeout(() => {
-        setSaveNotification({ show: true, message: 'Update taking longer than expected…', type: 'loading' });
-      }, 5000);
+        // No-op: reserved for telemetry or future UI hook
+      }, 10000);
       
       // Update local state immediately for better UX
       setTrades(prev => prev.map(trade => 

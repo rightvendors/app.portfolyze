@@ -8,7 +8,7 @@ import * as XLSX from 'xlsx';
 interface TradesTableProps {
   trades: Trade[];
   onAddTrade: (trade: Omit<Trade, 'id' | 'buyAmount'>) => void;
-  onUpdateTrade: (id: string, updates: Partial<Trade>) => void;
+  onUpdateTrade: (id: string, updates: Partial<Trade>) => Promise<void>;
   onDeleteTrade: (id: string) => void;
   onDeleteAllTrades?: () => Promise<void>;
   updatePriceCacheWithNAV?: (isin: string, nav: number) => void;

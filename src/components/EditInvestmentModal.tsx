@@ -8,7 +8,7 @@ import { getGoldSilverPriceService } from '../services/goldPriceService';
 interface EditInvestmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpdateTrade: (id: string, updates: Partial<Trade>) => void;
+  onUpdateTrade: (id: string, updates: Partial<Trade>) => Promise<void>;
   trade: Trade | null;
   existingTrades: Trade[];
 }
@@ -32,6 +32,7 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
     bucketAllocation: ''
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
 
@@ -290,34 +291,43 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
     onUpdateTrade(trade.id, updates);
   };
 
-  const scheduleAutoSave = () => {
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-    // Debounce 600ms
-    saveTimeoutRef.current = window.setTimeout(() => {
-      performSave();
-    }, 600);
-  };
+  // Remove autosave behavior; updates only on explicit button click
+  const scheduleAutoSave = () => {};
 
-  // Auto-save on any field change
-  useEffect(() => {
-    if (!isOpen || !trade || !selectedInvestment) return;
-    // Only autosave when numeric fields are valid numbers (or empty means no change)
-    const qtyStr = (tradeData.quantity ?? '').toString().trim();
-    const rateStr = (tradeData.buyRate ?? '').toString().trim();
-    const qtyOk = qtyStr === '' || Number.isFinite(Number(qtyStr));
-    const rateOk = rateStr === '' || Number.isFinite(Number(rateStr));
-    if (qtyOk && rateOk) {
-      scheduleAutoSave();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tradeData.date, tradeData.quantity, tradeData.buyRate, tradeData.transactionType, tradeData.bucketAllocation, selectedInvestment?.name, selectedInvestment?.type, selectedInvestment?.symbol]);
+  // No autosave; user must click Update Trade
 
   // Manual save button as fallback
-  const handleSave = () => {
-    performSave();
-    onClose();
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const hasChangesBefore = true; // performSave checks and early-returns if no diff
+      await onUpdateTrade(trade!.id, ((): Partial<Trade> => {
+        if (!trade || !selectedInvestment) return {};
+        const updates: Partial<Trade> = {};
+        if (tradeData.date && tradeData.date !== trade.date) updates.date = tradeData.date;
+        const quantityStr = (tradeData.quantity ?? '').toString().trim();
+        const parsedQuantity = quantityStr === '' ? undefined : Number(quantityStr);
+        if (Number.isFinite(parsedQuantity) && parsedQuantity !== trade.quantity) updates.quantity = parsedQuantity as number;
+        const buyRateStr = (tradeData.buyRate ?? '').toString().trim();
+        const parsedBuyRate = buyRateStr === '' ? undefined : Number(buyRateStr);
+        if (Number.isFinite(parsedBuyRate) && parsedBuyRate !== trade.buyRate) updates.buyRate = parsedBuyRate as number;
+        if (tradeData.transactionType && tradeData.transactionType !== trade.transactionType) updates.transactionType = tradeData.transactionType as 'buy' | 'sell';
+        const currentBucket = (trade.bucketAllocation || '').trim();
+        const newBucket = (tradeData.bucketAllocation || '').trim();
+        if (newBucket !== currentBucket) updates.bucketAllocation = newBucket;
+        if (selectedInvestment.name && selectedInvestment.name !== trade.name) updates.name = selectedInvestment.name;
+        if (selectedInvestment.type && selectedInvestment.type !== trade.investmentType) updates.investmentType = selectedInvestment.type;
+        if (selectedInvestment.type === 'mutual_fund') {
+          const newIsin = selectedInvestment.symbol || '';
+          if (newIsin && newIsin !== (trade.isin || '')) updates.isin = newIsin;
+        }
+        return updates;
+      })());
+      setIsSaving(false);
+      onClose();
+    } catch (e) {
+      setIsSaving(false);
+    }
   };
 
   const filteredSuggestions = suggestions.filter(inv => {
@@ -535,9 +545,10 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
                 <div className="flex gap-3 mt-6">
                   <button
                     onClick={handleSave}
-                    className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    disabled={isSaving}
+                    className={`flex-1 py-2 px-4 rounded-lg font-medium text-white transition-colors ${isSaving ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                   >
-                    Update Trade
+                    {isSaving ? 'Updating…' : 'Update Trade'}
                   </button>
                   <button
                     onClick={onClose}
