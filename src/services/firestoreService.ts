@@ -84,8 +84,19 @@ export class FirestoreService {
   async updateTrade(userId: string, tradeId: string, updates: Partial<Trade>): Promise<void> {
     try {
       const tradeRef = this.getUserDoc(userId, 'trades', tradeId);
+      // Sanitize updates: remove undefined/null, ensure no NaN
+      const sanitizedEntries = Object.entries(updates || {}).filter(([_, v]) => {
+        if (v === undefined || v === null) return false;
+        if (typeof v === 'number' && Number.isNaN(v)) return false;
+        return true;
+      }).map(([k, v]) => {
+        if (typeof v === 'string') return [k, v];
+        if (typeof v === 'number') return [k, Number(v)];
+        return [k, v];
+      });
+      const sanitized: Partial<Trade> = Object.fromEntries(sanitizedEntries) as Partial<Trade>;
       const updateData = {
-        ...updates,
+        ...sanitized,
         updatedAt: serverTimestamp()
       };
       

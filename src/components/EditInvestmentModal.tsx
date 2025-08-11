@@ -303,7 +303,14 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
   // Auto-save on any field change
   useEffect(() => {
     if (!isOpen || !trade || !selectedInvestment) return;
-    scheduleAutoSave();
+    // Only autosave when numeric fields are valid numbers (or empty means no change)
+    const qtyStr = (tradeData.quantity ?? '').toString().trim();
+    const rateStr = (tradeData.buyRate ?? '').toString().trim();
+    const qtyOk = qtyStr === '' || Number.isFinite(Number(qtyStr));
+    const rateOk = rateStr === '' || Number.isFinite(Number(rateStr));
+    if (qtyOk && rateOk) {
+      scheduleAutoSave();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tradeData.date, tradeData.quantity, tradeData.buyRate, tradeData.transactionType, tradeData.bucketAllocation, selectedInvestment?.name, selectedInvestment?.type, selectedInvestment?.symbol]);
 

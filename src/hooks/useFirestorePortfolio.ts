@@ -1032,7 +1032,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       const newBuyRate = updates.buyRate !== undefined ? updates.buyRate : originalTrade.buyRate;
       
       if (updates.quantity !== undefined || updates.buyRate !== undefined) {
-        updatedTrade.buyAmount = newQuantity * newBuyRate;
+        updatedTrade.buyAmount = Number(((newQuantity || 0) * (newBuyRate || 0)).toFixed(2));
       }
       // If nothing material changed, short-circuit to avoid needless write
       const keys = Object.keys(updatedTrade);
@@ -1061,6 +1061,8 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       setCalculatedHoldings(newHoldings);
       const newBuckets = calculateBucketSummary();
       setCalculatedBuckets(newBuckets);
+      // Refresh prices in background to reflect new quantities/rates if applicable
+      updateAllPrices();
     } catch (error) {
       // Rollback local state if Firebase save failed
       if (originalTrade) {
