@@ -160,20 +160,21 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
 
   // Performance optimization: Memoized unique investments
   const uniqueInvestments = useMemo(() => {
-    const investmentMap = new Map<string, { type: string; lastTradeDate: string; isin?: string }>();
+    const investmentMap = new Map<string, { type: string; lastTradeDate: string; isin?: string; symbol?: string }>();
     trades.forEach(trade => {
       if (trade.name.trim()) {
-        // For mutual funds, include ISIN in the key if available
-        const key = trade.investmentType === 'mutual_fund' && trade.isin 
-          ? `${trade.name}-${trade.isin}` 
+        const key = trade.investmentType === 'mutual_fund' && trade.isin
+          ? `${trade.name}-${trade.isin}`
           : trade.name;
-        
+
         const existing = investmentMap.get(key);
         if (!existing || trade.date > existing.lastTradeDate) {
           investmentMap.set(key, {
             type: trade.investmentType,
             lastTradeDate: trade.date,
-            isin: trade.isin
+            isin: trade.isin,
+            // For stocks, we may have symbol stored in isin via add modal
+            symbol: trade.investmentType === 'stock' ? (trade.isin || trade.name) : undefined
           });
         }
       }
@@ -210,10 +211,17 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     try {
       let price: number | null = null;
       
-      // Try Stock Price Service for stocks
+      // Try Stock Price Service for stocks (symbol can be name; service matches by symbol OR exact name)
       if (type === 'stock') {
         const stockService = getStockPriceService();
         price = await stockService.getCurrentPrice(symbol);
+        if (price === null) {
+          // Try search fallback to resolve symbol by name
+          const found = await stockService.searchStock(symbol);
+          if (found) {
+            price = found.price;
+          }
+        }
       }
       
       // Try Gold/Silver Price Service for gold and silver
@@ -240,9 +248,21 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
             console.log(`Firestore: Found NAV by ISIN:`, { isin, nav: price, schemeName: navData.scheme_name });
           } else {
             console.warn(`Firestore: No NAV found for ISIN: ${isin}`);
+            // Fallback to name search if ISIN failed
+            const navByName = await mutualFundService.searchNAV(symbol);
+            if (navByName) {
+              price = navByName.nav;
+              console.log(`Firestore: Fallback NAV by name:`, { name: symbol, nav: price });
+            }
           }
         } else {
           console.warn(`Firestore: No ISIN provided for mutual fund: ${symbol}`);
+          // Try name search
+          const navByName = await mutualFundService.searchNAV(symbol);
+          if (navByName) {
+            price = navByName.nav;
+            console.log(`Firestore: NAV by name without ISIN:`, { name: symbol, nav: price });
+          }
         }
       }
       
@@ -641,6 +661,9 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       const calculated = calculateCurrentHoldings();
       setCalculatedHoldings(calculated);
       setLoadingStates(prev => ({ ...prev, holdings: false }));
+      // Kick off a background price refresh to ensure live prices are populated
+      // Safe due to internal freshness guards
+      updateAllPrices();
     }, 200);
   }, [calculateCurrentHoldings, subscriptions.holdings]);
 
@@ -1199,11 +1222,13 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         
         const batchResults = await Promise.allSettled(
           batch.map(async ([key, data]) => {
-            // Extract name and ISIN from the key
-            const parts = key.split('-');
-            const name = parts[0];
-            const isin = parts.length > 1 ? parts[1] : data.isin;
-            const price = await fetchRealTimePrice(name, data.type, isin);
+            // Extract name and ISIN from the key using last hyphen to avoid truncating names
+            const lastDash = key.lastIndexOf('-');
+            const name = lastDash > -1 ? key.slice(0, lastDash) : key;
+            const isin = lastDash > -1 ? key.slice(lastDash + 1) : data.isin;
+            // For stocks, prefer symbol if we have it; otherwise, fall back to name
+            const symbolOrName = data.type === 'stock' ? (data.symbol || name) : name;
+            const price = await fetchRealTimePrice(symbolOrName, data.type, isin);
             return { name: key, type: data.type, price, isin: data.isin };
           })
         );
