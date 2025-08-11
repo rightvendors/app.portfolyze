@@ -190,10 +190,15 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
 
   // Enhanced price fetching with retry logic and better error handling
   const fetchRealTimePrice = useCallback(async (symbol: string, type: string, isin?: string): Promise<number> => {
-    // For mutual funds, use ISIN if available for cache key
-    const cacheKey = type === 'mutual_fund' && isin 
-      ? `${symbol}-${isin}-${type}` 
-      : `${symbol}-${type}`;
+    // Canonical cache keys
+    const getCanonicalKey = (resolvedSymbol: string | undefined, resolvedIsin?: string) => {
+      if (type === 'mutual_fund' && resolvedIsin) return `mf:${resolvedIsin.toUpperCase()}`;
+      if (type === 'stock') return `stock:${(resolvedSymbol || symbol).toUpperCase()}`;
+      if (type === 'gold') return 'gold:spot';
+      if (type === 'silver') return 'silver:spot';
+      return `${type}:${(resolvedSymbol || symbol).toLowerCase()}`;
+    };
+    let cacheKey = getCanonicalKey(symbol, isin);
     const now = Date.now();
     const cacheEntry = priceCache[cacheKey];
     
@@ -214,12 +219,14 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       // Try Stock Price Service for stocks (symbol can be name; service matches by symbol OR exact name)
       if (type === 'stock') {
         const stockService = getStockPriceService();
+        // Try by symbol first
         price = await stockService.getCurrentPrice(symbol);
         if (price === null) {
           // Try search fallback to resolve symbol by name
           const found = await stockService.searchStock(symbol);
           if (found) {
             price = found.price;
+            cacheKey = getCanonicalKey(found.symbol);
           }
         }
       }
@@ -253,6 +260,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
             if (navByName) {
               price = navByName.nav;
               console.log(`Firestore: Fallback NAV by name:`, { name: symbol, nav: price });
+              cacheKey = getCanonicalKey(symbol, navByName.isin || isin);
             }
           }
         } else {
@@ -262,6 +270,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
           if (navByName) {
             price = navByName.nav;
             console.log(`Firestore: NAV by name without ISIN:`, { name: symbol, nav: price });
+            cacheKey = getCanonicalKey(symbol, navByName.isin);
           }
         }
       }
@@ -484,11 +493,19 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         
         // For mutual funds, use ISIN to look up NAV price, otherwise use name
         let cacheKey: string;
+        // Use canonical keys to read prices consistent with fetchRealTimePrice
         if (data.investmentType === 'mutual_fund' && data.isin) {
-          // Consistent cache key: use display name and ISIN
-          cacheKey = `${(trades.find(t => t.isin === data.isin)?.name || name)}-${data.isin}-${data.investmentType}`;
+          cacheKey = `mf:${data.isin.toUpperCase()}`;
+        } else if (data.investmentType === 'stock') {
+          // Prefer symbol if present in any trade for this holding
+          const symbol = trades.find(t => t.name === name && (t.isin || '').trim())?.isin || name;
+          cacheKey = `stock:${symbol.toUpperCase()}`;
+        } else if (data.investmentType === 'gold') {
+          cacheKey = 'gold:spot';
+        } else if (data.investmentType === 'silver') {
+          cacheKey = 'silver:spot';
         } else {
-          cacheKey = `${name}-${data.investmentType}`;
+          cacheKey = `${data.investmentType}:${name.toLowerCase()}`;
         }
         
         let currentPrice = priceCache[cacheKey]?.price ?? averageBuyPrice;
@@ -1245,17 +1262,11 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         }
       }
       
-      // Batch update to Firestore using the new service
-      if (user && results.length > 0) {
-        const updatedHoldings = calculateCurrentHoldings();
-        const updatedBuckets = calculateBucketSummary();
-        
-        // Use batch write for better performance
-        await persistCalculatedData(user.uid, updatedHoldings, updatedBuckets);
-        
-        setCalculatedHoldings(updatedHoldings);
-        setCalculatedBuckets(updatedBuckets);
-      }
+      // After cache updated, recompute holdings to reflect live prices locally
+      const updatedHoldings = calculateCurrentHoldings();
+      setCalculatedHoldings(updatedHoldings);
+      const updatedBuckets = calculateBucketSummary();
+      setCalculatedBuckets(updatedBuckets);
     } catch (error) {
       console.error('Error updating prices:', error);
       setError('Failed to update prices');
