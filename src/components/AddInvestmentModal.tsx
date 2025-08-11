@@ -38,7 +38,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
     buyRate: '',
     transactionType: 'buy' as 'buy' | 'sell',
     brokerBank: '',
-    bucketAllocation: 'bucket1a',
+    bucketAllocation: '',
     interestRate: ''
   });
   const [suggestions, setSuggestions] = useState<Investment[]>([]);
@@ -665,6 +665,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
                         onChange={(e) => setTradeData({ ...tradeData, bucketAllocation: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
+                        <option value="">No Allocation</option>
                         <option value="bucket1a">Bucket 1A</option>
                         <option value="bucket1b">Bucket 1B</option>
                         <option value="bucket1c">Bucket 1C</option>

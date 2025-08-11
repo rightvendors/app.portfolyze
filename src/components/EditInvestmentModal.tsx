@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Trade } from '../types/portfolio';
 import { X, Search, TrendingUp, TrendingDown } from 'lucide-react';
 import { getStockPriceService } from '../services/stockPriceService';
@@ -29,7 +29,7 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
     quantity: '',
     buyRate: '',
     transactionType: 'buy',
-    bucketAllocation: 'bucket1a'
+    bucketAllocation: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -49,6 +49,7 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
   ];
 
   const bucketOptions = [
+    { value: '', label: 'No Allocation' },
     { value: 'bucket1a', label: 'Bucket 1A' },
     { value: 'bucket1b', label: 'Bucket 1B' },
     { value: 'bucket1c', label: 'Bucket 1C' },
@@ -76,7 +77,7 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
         quantity: trade.quantity.toString(),
         buyRate: trade.buyRate.toString(),
         transactionType: trade.transactionType,
-        bucketAllocation: trade.bucketAllocation || 'bucket1a'
+        bucketAllocation: trade.bucketAllocation || ''
       });
       
       // Set selected investment based on current trade
@@ -231,7 +232,9 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
     setShowTradeForm(true);
   };
 
-  const handleSave = () => {
+  const saveTimeoutRef = useRef<number | null>(null);
+
+  const performSave = () => {
     if (!trade || !selectedInvestment) return;
 
     const updates: Partial<Trade> = {
@@ -246,6 +249,28 @@ const EditInvestmentModal: React.FC<EditInvestmentModalProps> = ({
     };
 
     onUpdateTrade(trade.id, updates);
+  };
+
+  const scheduleAutoSave = () => {
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    // Debounce 600ms
+    saveTimeoutRef.current = window.setTimeout(() => {
+      performSave();
+    }, 600);
+  };
+
+  // Auto-save on any field change
+  useEffect(() => {
+    if (!isOpen || !trade || !selectedInvestment) return;
+    scheduleAutoSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradeData.date, tradeData.quantity, tradeData.buyRate, tradeData.transactionType, tradeData.bucketAllocation, selectedInvestment?.name, selectedInvestment?.type, selectedInvestment?.symbol]);
+
+  // Manual save button as fallback
+  const handleSave = () => {
+    performSave();
     onClose();
   };
 

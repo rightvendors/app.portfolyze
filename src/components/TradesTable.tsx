@@ -57,6 +57,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   ];
 
   const bucketOptions = [
+    { value: '', label: 'No Allocation' },
     { value: 'bucket1a', label: 'Bucket 1A' },
     { value: 'bucket1b', label: 'Bucket 1B' },
     { value: 'bucket1c', label: 'Bucket 1C' },
@@ -113,7 +114,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   };
 
   const getBucketDisplayValue = (value: string) => {
-    if (!value) return '';
+    if (!value) return 'No Allocation';
     const bucket = bucketOptions.find(opt => opt.value === value);
     return bucket?.label || value;
   };

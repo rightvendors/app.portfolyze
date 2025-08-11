@@ -465,12 +465,13 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
         // For mutual funds, use ISIN to look up NAV price, otherwise use name
         let cacheKey: string;
         if (data.investmentType === 'mutual_fund' && data.isin) {
-          cacheKey = `${name}-${data.isin}-${data.investmentType}`;
+          // Consistent cache key: use display name and ISIN
+          cacheKey = `${(trades.find(t => t.isin === data.isin)?.name || name)}-${data.isin}-${data.investmentType}`;
         } else {
           cacheKey = `${name}-${data.investmentType}`;
         }
         
-        let currentPrice = priceCache[cacheKey]?.price || averageBuyPrice;
+        let currentPrice = priceCache[cacheKey]?.price ?? averageBuyPrice;
         
         console.log(`Firestore Holdings calculation for "${name}":`, {
           investmentType: data.investmentType,
@@ -995,6 +996,10 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       }
       
       setSaveNotification({ show: true, message: 'Updating trade...', type: 'loading' });
+      // Safety timeout to avoid infinite spinner if backend is slow
+      const spinnerTimeout = setTimeout(() => {
+        setSaveNotification({ show: true, message: 'Update taking longer than expected…', type: 'loading' });
+      }, 5000);
       
       // Update local state immediately for better UX
       setTrades(prev => prev.map(trade => 
@@ -1003,7 +1008,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       
       // Then save to Firebase
       await firestoreService.updateTrade(user.uid, id, updatedTrade);
-      
+      clearTimeout(spinnerTimeout);
       setSaveNotification({ show: true, message: 'Trade updated successfully!', type: 'success' });
     } catch (error) {
       // Rollback local state if Firebase save failed
@@ -1305,10 +1310,9 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
 
   // Function to update price cache with NAV data
   const updatePriceCacheWithNAV = useCallback((isin: string, nav: number, name?: string) => {
-    // For mutual funds, use name-ISIN-investmentType format if name is provided
-    const cacheKey = name 
-      ? `${name}-${isin}-mutual_fund`
-      : `${isin}-mutual_fund`;
+    // For mutual funds, use name-ISIN-investmentType format; default to any trade's name for that ISIN
+    const mfName = name || trades.find(t => t.isin === isin)?.name || '';
+    const cacheKey = `${mfName}-${isin}-mutual_fund`;
     setPriceCache(prev => ({
       ...prev,
       [cacheKey]: {
@@ -1319,7 +1323,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
       }
     }));
     console.log(`Updated price cache for ${isin} with NAV: ${nav}`);
-  }, []);
+  }, [trades]);
 
   // Disabled auto-refresh to prevent continuous updates
   // Users can manually refresh when needed

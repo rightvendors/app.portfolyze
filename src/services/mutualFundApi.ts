@@ -69,7 +69,22 @@ class MutualFundApiService {
   
   // Parse a single CSV line handling quoted fields
   private parseCSVLine(line: string): string[] {
-    return line.split(',').map(f => f.trim());
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
   }
 
   // Get all mutual fund NAVs from Google Sheets
