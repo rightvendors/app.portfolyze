@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Search, ArrowLeft, TrendingUp, TrendingDown, Plus, Clock, Star } from 'lucide-react';
 import { Trade } from '../types/portfolio';
 import { useOptimizedSearch, SearchResult } from '../hooks/useOptimizedSearch';
+import { getStockPriceService } from '../services/stockPriceService';
+import { getMutualFundService } from '../services/mutualFundApi';
 
 interface Investment {
   id: string;
@@ -41,6 +43,9 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
     interestRate: ''
   });
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [selectedPrice, setSelectedPrice] = useState<number | null>(null);
+  const stockService = getStockPriceService();
+  const mutualFundService = getMutualFundService();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Optimized search hook
@@ -246,6 +251,22 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
   const handleInvestmentSelect = (investment: Investment) => {
     setSelectedInvestment(investment);
     setShowTradeForm(true);
+    // Fetch latest price based on type
+    (async () => {
+      try {
+        if (investment.type === 'stock') {
+          const price = await stockService.getCurrentPrice(investment.symbol);
+          setSelectedPrice(price);
+        } else if (investment.type === 'mutual_fund') {
+          const nav = await mutualFundService.getNAV(investment.name);
+          setSelectedPrice(nav);
+        } else {
+          setSelectedPrice(null);
+        }
+      } catch (e) {
+        setSelectedPrice(null);
+      }
+    })();
   };
 
   // Filter selection removed
@@ -361,6 +382,12 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
                     onFocus={() => setIsDropdownOpen(true)}
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                  {/* Quick categories */}
+                  {(!searchQuery || searchQuery.trim().length === 0) && (
+                    <div className="mt-2 text-xs text-gray-600">
+                      Suggested: Any stock name, any mutual fund name, Fixed deposit, Gold, Silver, NPS, ETF
+                    </div>
+                  )}
                   {isDropdownOpen && (
                     <div className="absolute mt-2 left-0 right-0 z-50 bg-white border border-gray-300 rounded-md shadow-lg max-h-80 overflow-y-auto">
                       {searchQuery.length < 3 ? (
@@ -420,7 +447,9 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
                     </div>
                     <div className="text-right">
                       <p className="font-semibold text-gray-900">
-                        ₹{selectedInvestment.price > 0 ? selectedInvestment.price.toLocaleString() : 'N/A'}
+                        {selectedInvestment.type === 'stock' || selectedInvestment.type === 'mutual_fund' ? (
+                          selectedPrice !== null ? `₹${selectedPrice.toLocaleString()}` : '₹N/A'
+                        ) : '₹N/A'}
                       </p>
                       {selectedInvestment.changePercent !== 0 && (
                         <p className={`text-sm ${
@@ -501,16 +530,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Broker/Bank</label>
-                      <input
-                        type="text"
-                        value={tradeData.brokerBank}
-                        onChange={(e) => setTradeData({ ...tradeData, brokerBank: e.target.value })}
-                        placeholder="Enter broker or bank name"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
+                    {/* Broker/Bank removed per requirements */}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Bucket Allocation</label>
@@ -530,22 +550,22 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Interest Rate %
-                        {['bond', 'fixed_deposit', 'nps', 'etf'].includes(selectedInvestment?.type || '') && (
+                    {selectedInvestment && selectedInvestment.type !== 'stock' && selectedInvestment.type !== 'mutual_fund' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Interest Rate %
                           <span className="text-red-500 ml-1">*</span>
-                        )}
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={tradeData.interestRate}
-                        onChange={(e) => setTradeData({ ...tradeData, interestRate: e.target.value })}
-                        placeholder="Enter interest rate"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={tradeData.interestRate}
+                          onChange={(e) => setTradeData({ ...tradeData, interestRate: e.target.value })}
+                          placeholder="Enter interest rate"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Total Amount Display */}

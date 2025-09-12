@@ -46,6 +46,75 @@ export const useOptimizedSearch = () => {
       const searchTerm = query.toLowerCase();
       const results: SearchResult[] = [];
 
+      // Recognize quick category terms
+      const categoryMap: { [key: string]: SearchResult } = {
+        'fixed deposit': {
+          id: 'category-fixed-deposit',
+          name: 'New Fixed Deposit',
+          symbol: '',
+          type: 'fixed_deposit',
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          description: 'Create a fixed deposit investment',
+          risk: 'Low Risk',
+          source: 'search'
+        },
+        'gold': {
+          id: 'category-gold',
+          name: 'Gold',
+          symbol: 'GOLD',
+          type: 'gold',
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          description: 'Add a gold investment',
+          risk: 'Low Risk',
+          source: 'search'
+        },
+        'silver': {
+          id: 'category-silver',
+          name: 'Silver',
+          symbol: 'SILVER',
+          type: 'silver',
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          description: 'Add a silver investment',
+          risk: 'Medium Risk',
+          source: 'search'
+        },
+        'nps': {
+          id: 'category-nps',
+          name: 'New NPS',
+          symbol: '',
+          type: 'nps',
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          description: 'Create a National Pension System investment',
+          risk: 'Medium Risk',
+          source: 'search'
+        },
+        'etf': {
+          id: 'category-etf',
+          name: 'New ETF',
+          symbol: '',
+          type: 'etf',
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          description: 'Add an ETF investment',
+          risk: 'Medium Risk',
+          source: 'search'
+        }
+      };
+      Object.keys(categoryMap).forEach(key => {
+        if (searchTerm.includes(key)) {
+          results.push(categoryMap[key]);
+        }
+      });
+
       // Search in cached data first (instant results)
       const cachedData = await backgroundDataService.getAllCachedData();
       
