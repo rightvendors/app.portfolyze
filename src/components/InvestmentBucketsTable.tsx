@@ -13,6 +13,25 @@ const InvestmentBucketsTable: React.FC<InvestmentBucketsTableProps> = ({
   onUpdateBucketTarget,
   onUpdateBucketPurpose
 }) => {
+  // Tooltip for large values
+  const Tooltip: React.FC<{ content: string; children: React.ReactNode }> = ({ content, children }) => {
+    const [isVisible, setIsVisible] = useState(false);
+    return (
+      <div 
+        className="relative inline-block"
+        onMouseEnter={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+      >
+        {children}
+        {isVisible && (
+          <div className="absolute z-50 px-2 py-1 text-xs text-white bg-gray-900 rounded shadow-lg whitespace-nowrap bottom-full left-1/2 transform -translate-x-1/2 mb-1">
+            {content}
+            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+          </div>
+        )}
+      </div>
+    );
+  };
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [editingPurpose, setEditingPurpose] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
@@ -582,7 +601,13 @@ const InvestmentBucketsTable: React.FC<InvestmentBucketsTableProps> = ({
               <div className={`h-10 px-3 text-xs border-r border-gray-300 bg-white flex items-center justify-end ${
                 bucket.annualYield >= 0 ? 'text-green-600' : 'text-red-600'
               }`} style={{ width: columnWidths.annualYield }}>
-                {formatPercent(bucket.annualYield)}
+                {Math.abs(bucket.annualYield) > 1000 ? (
+                  <Tooltip content={`${formatPercent(bucket.annualYield)}`}>
+                    <span className="cursor-help">…</span>
+                  </Tooltip>
+                ) : (
+                  formatPercent(bucket.annualYield)
+                )}
               </div>
               
               {/* XIRR */}

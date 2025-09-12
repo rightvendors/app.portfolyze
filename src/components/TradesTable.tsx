@@ -1,8 +1,8 @@
-import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback, Suspense } from 'react';
 import { Trade } from '../types/portfolio';
 import { Trash2, Plus, Download, Upload, FileText, Edit } from 'lucide-react';
-import AddInvestmentModal from './AddInvestmentModal';
-import EditInvestmentModal from './EditInvestmentModal';
+const AddInvestmentModal = React.lazy(() => import('./AddInvestmentModal'));
+const EditInvestmentModal = React.lazy(() => import('./EditInvestmentModal'));
 import * as XLSX from 'xlsx';
 
 interface TradesTableProps {
@@ -10,8 +10,6 @@ interface TradesTableProps {
   onAddTrade: (trade: Omit<Trade, 'id' | 'buyAmount'>) => void;
   onUpdateTrade: (id: string, updates: Partial<Trade>) => Promise<void>;
   onDeleteTrade: (id: string) => void;
-  onDeleteAllTrades?: () => Promise<void>;
-  updatePriceCacheWithNAV?: (isin: string, nav: number) => void;
 }
 
 const TradesTable: React.FC<TradesTableProps> = ({
@@ -19,8 +17,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
   onAddTrade,
   onUpdateTrade,
   onDeleteTrade,
-  onDeleteAllTrades,
-  updatePriceCacheWithNAV
+  
 }) => {
   // State management
   const [showAddInvestmentModal, setShowAddInvestmentModal] = useState(false);
@@ -43,6 +40,8 @@ const TradesTable: React.FC<TradesTableProps> = ({
   });
   const [resizing, setResizing] = useState<{ column: string; startX: number; startWidth: number } | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
 
   // Investment types for display
   const investmentTypes = [
@@ -149,10 +148,12 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
   // Checkbox selection functions
   const handleSelectAll = () => {
-    if (selectedTrades.size === trades.length && trades.length > 0) {
+    const pageStart = (currentPage - 1) * pageSize;
+    const pageCount = Math.min(pageSize, Math.max(0, trades.length - pageStart));
+    if (selectedTrades.size === pageCount && pageCount > 0) {
       setSelectedTrades(new Set());
     } else {
-      setSelectedTrades(new Set(trades.map((_, index) => index)));
+      setSelectedTrades(new Set(Array.from({ length: pageCount }, (_, i) => i)));
     }
   };
 
@@ -174,9 +175,9 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
   // Clear selected trades when trades array changes (only if trades are actually removed)
   useEffect(() => {
-    // Reset selection when trades array changes since we're using indices
+    // Reset selection when trades array changes or pagination changes since we're using indices
     setSelectedTrades(new Set());
-  }, [trades]);
+  }, [trades, currentPage, pageSize]);
 
   // Bulk operations
   const handleBulkDelete = async () => {
@@ -184,8 +185,9 @@ const TradesTable: React.FC<TradesTableProps> = ({
     
     if (window.confirm(`Are you sure you want to delete ${selectedTrades.size} selected trade(s)?`)) {
       const sortedTrades = sortTrades(trades);
+      const pageStart = (currentPage - 1) * pageSize;
       for (const index of selectedTrades) {
-        const trade = sortedTrades[index];
+        const trade = sortedTrades[pageStart + index];
         if (trade) {
           await onDeleteTrade(trade.id);
         }
@@ -198,7 +200,8 @@ const TradesTable: React.FC<TradesTableProps> = ({
     if (selectedTrades.size === 1) {
       const index = Array.from(selectedTrades)[0];
       const sortedTrades = sortTrades(trades);
-      const trade = sortedTrades[index];
+      const pageStart = (currentPage - 1) * pageSize;
+      const trade = sortedTrades[pageStart + index];
       if (trade) {
         setEditingTrade(trade);
       }
@@ -535,6 +538,13 @@ const TradesTable: React.FC<TradesTableProps> = ({
 
   const tableWidth = Object.values(columnWidths).reduce((sum, width) => sum + width, 0);
 
+  // Memoized sorted and paginated trades
+  const sortedTrades = useMemo(() => sortTrades(trades), [trades, sortTrades]);
+  const totalPages = Math.max(1, Math.ceil(sortedTrades.length / pageSize));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const pageStart = (currentPageSafe - 1) * pageSize;
+  const currentPageTrades = useMemo(() => sortedTrades.slice(pageStart, pageStart + pageSize), [sortedTrades, pageStart, pageSize]);
+
   return (
     <div className="p-4 bg-white">
       <div className="flex justify-between items-center mb-4">
@@ -677,7 +687,7 @@ const TradesTable: React.FC<TradesTableProps> = ({
           {/* Scrollable Data Rows */}
           <div className="overflow-y-auto" style={{ maxHeight: 'calc(70vh - 80px)' }}>
             {/* Data Rows */}
-            {sortTrades(trades).map((trade: Trade, index: number) => (
+            {currentPageTrades.map((trade: Trade, index: number) => (
               <div 
                 key={`${trade.id}-${index}`}
                 className="flex hover:bg-gray-50 relative group"
@@ -725,25 +735,79 @@ const TradesTable: React.FC<TradesTableProps> = ({
               </div>
             ))}
           </div>
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-between px-2 py-2 border-t border-gray-300 bg-white">
+            <div className="flex items-center gap-2 text-xs text-gray-700">
+              <span>Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => { setPageSize(parseInt(e.target.value, 10)); setCurrentPage(1); }}
+                className="border border-gray-300 rounded px-2 py-1 text-xs"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+              <span>
+                {sortedTrades.length === 0 ? '0' : `${pageStart + 1}-${Math.min(pageStart + pageSize, sortedTrades.length)}`} of {sortedTrades.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPageSafe === 1}
+                className="px-2 py-1 text-xs border border-gray-300 rounded disabled:opacity-50"
+              >
+                « First
+              </button>
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPageSafe - 1))}
+                disabled={currentPageSafe === 1}
+                className="px-2 py-1 text-xs border border-gray-300 rounded disabled:opacity-50"
+              >
+                ‹ Prev
+              </button>
+              <span className="px-2 text-xs text-gray-700">Page {currentPageSafe} / {totalPages}</span>
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPageSafe + 1))}
+                disabled={currentPageSafe === totalPages}
+                className="px-2 py-1 text-xs border border-gray-300 rounded disabled:opacity-50"
+              >
+                Next ›
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPageSafe === totalPages}
+                className="px-2 py-1 text-xs border border-gray-300 rounded disabled:opacity-50"
+              >
+                Last »
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       
       {/* Add Investment Modal */}
-      <AddInvestmentModal
-        isOpen={showAddInvestmentModal}
-        onClose={() => setShowAddInvestmentModal(false)}
-        onAddTrade={onAddTrade}
-        existingTrades={trades}
-      />
+      <Suspense fallback={<div className="p-4 text-xs text-gray-600">Loading add investment...</div>}>
+        <AddInvestmentModal
+          isOpen={showAddInvestmentModal}
+          onClose={() => setShowAddInvestmentModal(false)}
+          onAddTrade={onAddTrade}
+          existingTrades={trades}
+        />
+      </Suspense>
       
       {/* Edit Investment Modal */}
-      <EditInvestmentModal
-        isOpen={editingTrade !== null}
-        onClose={() => setEditingTrade(null)}
-        onUpdateTrade={onUpdateTrade}
-        trade={editingTrade}
-        existingTrades={trades}
-      />
+      <Suspense fallback={<div className="p-4 text-xs text-gray-600">Loading editor...</div>}>
+        <EditInvestmentModal
+          isOpen={editingTrade !== null}
+          onClose={() => setEditingTrade(null)}
+          onUpdateTrade={onUpdateTrade}
+          trade={editingTrade}
+          existingTrades={trades}
+        />
+      </Suspense>
     </div>
   );
 };
