@@ -39,6 +39,8 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
   isRefreshingPrices = false,
   lastRefreshTime = 0 
 }) => {
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
   const [columnWidths, setColumnWidths] = useState({
     name: 180,
     netQuantity: 120,
@@ -130,13 +132,13 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
     </div>
   );
 
-  const totals = holdings.reduce((acc, holding) => ({
+  const totals = useMemo(() => holdings.reduce((acc, holding) => ({
     investedAmount: acc.investedAmount + holding.investedAmount,
     currentValue: acc.currentValue + holding.currentValue,
     gainLossAmount: acc.gainLossAmount + holding.gainLossAmount,
     annualYield: acc.annualYield + (holding.annualYield * holding.investedAmount),
     xirr: acc.xirr + (holding.xirr * holding.investedAmount)
-  }), { investedAmount: 0, currentValue: 0, gainLossAmount: 0, annualYield: 0, xirr: 0 });
+  }), { investedAmount: 0, currentValue: 0, gainLossAmount: 0, annualYield: 0, xirr: 0 }), [holdings]);
 
   const totalGainLossPercent = totals.investedAmount > 0 ? 
     (totals.gainLossAmount / totals.investedAmount) * 100 : 0;
@@ -148,6 +150,10 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
     totals.xirr / totals.investedAmount : 0;
 
   const tableWidth = Object.values(columnWidths).reduce((sum, width) => sum + width, 0);
+  const totalPages = Math.max(1, Math.ceil(holdings.length / pageSize));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const pageStart = (currentPageSafe - 1) * pageSize;
+  const pageHoldings = useMemo(() => holdings.slice(pageStart, pageStart + pageSize), [holdings, pageStart, pageSize]);
 
   return (
     <div className="p-4 bg-white relative">
@@ -304,7 +310,7 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
           </div>
 
           {/* Data Rows */}
-          {holdings.map((holding, index) => (
+          {pageHoldings.map((holding, index) => (
             <div key={`${holding.name}-${index}`} className="flex hover:bg-gray-50 border-b border-gray-200">
               {/* Name */}
               <div className="min-h-10 px-3 py-2 text-xs border-r border-gray-300 bg-white flex items-center font-medium"
@@ -392,6 +398,57 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Pagination Controls */}
+      <div className="flex items-center justify-between px-2 py-2 bg-white mt-2">
+        <div className="flex items-center gap-2 text-xs text-gray-700">
+          <span>Rows per page:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => { setPageSize(parseInt(e.target.value, 10)); setCurrentPage(1); }}
+            className="border border-gray-300 rounded px-2 py-1 text-xs"
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+          </select>
+          <span>
+            {holdings.length === 0 ? '0' : `${pageStart + 1}-${Math.min(pageStart + pageSize, holdings.length)}`} of {holdings.length}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setCurrentPage(1)}
+            disabled={currentPageSafe === 1}
+            className="px-2 py-1 text-xs border border-gray-300 rounded disabled:opacity-50"
+          >
+            « First
+          </button>
+          <button
+            onClick={() => setCurrentPage(Math.max(1, currentPageSafe - 1))}
+            disabled={currentPageSafe === 1}
+            className="px-2 py-1 text-xs border border-gray-300 rounded disabled:opacity-50"
+          >
+            ‹ Prev
+          </button>
+          <span className="px-2 text-xs text-gray-700">Page {currentPageSafe} / {totalPages}</span>
+          <button
+            onClick={() => setCurrentPage(Math.min(totalPages, currentPageSafe + 1))}
+            disabled={currentPageSafe === totalPages}
+            className="px-2 py-1 text-xs border border-gray-300 rounded disabled:opacity-50"
+          >
+            Next ›
+          </button>
+          <button
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={currentPageSafe === totalPages}
+            className="px-2 py-1 text-xs border border-gray-300 rounded disabled:opacity-50"
+          >
+            Last »
+          </button>
         </div>
       </div>
     </div>
