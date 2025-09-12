@@ -33,7 +33,7 @@ export const useOptimizedSearch = () => {
 
   // Perform search when debounced query changes
   useEffect(() => {
-    if (debouncedQuery.length >= 2) {
+    if (debouncedQuery.length >= 3) {
       performSearch(debouncedQuery);
     } else {
       setSearchResults([]);

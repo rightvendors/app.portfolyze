@@ -29,7 +29,6 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
   onAddTrade,
   existingTrades
 }) => {
-  const [selectedFilter, setSelectedFilter] = useState('All');
   const [selectedInvestment, setSelectedInvestment] = useState<Investment | null>(null);
   const [showTradeForm, setShowTradeForm] = useState(false);
   const [tradeData, setTradeData] = useState({
@@ -41,7 +40,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
     bucketAllocation: '',
     interestRate: ''
   });
-  const [suggestions, setSuggestions] = useState<Investment[]>([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Optimized search hook
@@ -154,7 +153,7 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
     }
   ];
 
-  const filters = ['All', 'Stock', 'Mutual Fund', 'Gold', 'Silver', 'Bond', 'Fixed Deposit', 'NPS', 'ETF'];
+  // Filters removed for simplified UX
 
   const getTypeLabel = (type: string) => {
     const typeMap: { [key: string]: string } = {
@@ -226,63 +225,11 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
 
 
 
-  // Load suggestions on component mount
-  useEffect(() => {
-    if (isOpen) {
-      loadSuggestions();
-    }
-  }, [isOpen, existingTrades]);
+  // Suggestions preloading removed; search-only UX
 
-  const loadSuggestions = async () => {
-    try {
-      const existingInvestments = getExistingInvestments();
-      const cachedSuggestions = await getSuggestions();
-      
-      // Convert SearchResult to Investment format
-      const convertedSuggestions: Investment[] = cachedSuggestions.map(result => ({
-        id: result.id,
-        name: result.name,
-        symbol: result.symbol,
-        type: result.type,
-        price: result.price,
-        change: result.change,
-        changePercent: result.changePercent,
-        description: result.description,
-        risk: result.risk,
-        source: result.source
-      }));
-      
-      const allSuggestions = [...existingInvestments, ...convertedSuggestions];
-      setSuggestions(allSuggestions);
-    } catch (error) {
-      console.error('Error loading suggestions:', error);
-    }
-  };
+  // Filter logic removed
 
-  // Apply filter to suggestions
-  const getFilteredSuggestions = () => {
-    if (selectedFilter === 'All') {
-      return suggestions;
-    }
-    
-    const filterMap: { [key: string]: string } = {
-      'Stock': 'stock',
-      'Mutual Fund': 'mutual_fund',
-      'Gold': 'gold',
-      'Silver': 'silver',
-      'Bond': 'bond',
-      'Fixed Deposit': 'fixed_deposit',
-      'NPS': 'nps',
-      'ETF': 'etf'
-    };
-    
-    const filterType = filterMap[selectedFilter];
-    if (!filterType) return suggestions;
-    
-    return suggestions.filter(investment => investment.type === filterType);
-  };
-
-  const filteredInvestments = searchQuery.length >= 2 ? 
+  const filteredInvestments = searchQuery.length >= 3 ? 
     optimizedSearchResults.map(result => ({
       id: result.id,
       name: result.name,
@@ -294,43 +241,14 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
       description: result.description,
       risk: result.risk,
       source: result.source
-    })) : getFilteredSuggestions();
+    })) : [];
 
   const handleInvestmentSelect = (investment: Investment) => {
     setSelectedInvestment(investment);
     setShowTradeForm(true);
   };
 
-  const handleFilterSelect = (filter: string) => {
-    setSelectedFilter(filter);
-    
-    // For Bond, Fixed deposit, NPS, ETF - directly show trade form
-    if (['Bond', 'Fixed Deposit', 'NPS', 'ETF'].includes(filter)) {
-      // Create a placeholder investment for the selected type
-      const typeMap: { [key: string]: string } = {
-        'Bond': 'bond',
-        'Fixed Deposit': 'fixed_deposit',
-        'NPS': 'nps',
-        'ETF': 'etf'
-      };
-      
-      const placeholderInvestment: Investment = {
-        id: `placeholder-${typeMap[filter]}`,
-        name: `New ${filter}`,
-        symbol: '',
-        type: typeMap[filter] as 'bond' | 'fixed_deposit' | 'nps' | 'etf',
-        price: 0,
-        change: 0,
-        changePercent: 0,
-        description: `Add new ${filter.toLowerCase()} investment`,
-        risk: 'Medium Risk',
-        source: 'search'
-      };
-      
-      setSelectedInvestment(placeholderInvestment);
-      setShowTradeForm(true);
-    }
-  };
+  // Filter selection removed
 
   const handleAddTrade = () => {
     if (!selectedInvestment) return;
@@ -437,13 +355,55 @@ const AddInvestmentModal: React.FC<AddInvestmentModalProps> = ({
                   <input
                     ref={searchInputRef}
                     type="text"
-                    placeholder="Search stocks, mutual funds, bonds, and more..."
+                    placeholder="Search stocks and mutual funds. Type at least 3 letters..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => setIsDropdownOpen(true)}
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                  {isDropdownOpen && (
+                    <div className="absolute mt-2 left-0 right-0 z-50 bg-white border border-gray-300 rounded-md shadow-lg max-h-80 overflow-y-auto">
+                      {searchQuery.length < 3 ? (
+                        <div className="p-3 text-sm text-gray-600">
+                          Start typing to search. Enter at least 3 characters.
+                        </div>
+                      ) : isLoading ? (
+                        <div className="p-3 text-center text-gray-500 text-sm">
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                            Searching...
+                          </div>
+                        </div>
+                      ) : filteredInvestments.length === 0 ? (
+                        <div className="p-3 text-sm text-gray-600">No results found</div>
+                      ) : (
+                        <div className="py-1">
+                          {filteredInvestments.map((investment) => (
+                            <div
+                              key={investment.id}
+                              className="px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 transition-colors"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleInvestmentSelect(investment);
+                                setIsDropdownOpen(false);
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="font-medium text-gray-900 truncate mr-2">{investment.name}</div>
+                                <span className="text-xs text-gray-500 ml-2">{getTypeLabel(investment.type)}</span>
+                              </div>
+                              <div className="text-xs text-gray-600 truncate">{investment.symbol}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Suggestions list removed; results shown in dropdown only */}
+              <div className="px-6 py-2 text-xs text-gray-500">Names are fetched from AMFI and AMFI NAV (mutual funds), and Stocks Google Sheets.</div>
 
               {/* Filters */}
               <div className="px-6 py-4 border-b border-gray-200">
