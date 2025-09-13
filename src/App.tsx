@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useFirebaseAuth } from './hooks/useFirebaseAuth';
 import { useFirestorePortfolio } from './hooks/useFirestorePortfolio';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -6,8 +6,8 @@ import AuthGuard from './components/AuthGuard';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import TradesTable from './components/TradesTable';
-import CurrentHoldingsTable from './components/CurrentHoldingsTable';
-import InvestmentBucketsTable from './components/InvestmentBucketsTable';
+const CurrentHoldingsTable = React.lazy(() => import('./components/CurrentHoldingsTable'));
+const InvestmentBucketsTable = React.lazy(() => import('./components/InvestmentBucketsTable'));
 import FilterBar from './components/FilterBar';
 import SaveNotification from './components/SaveNotification';
 import { FileText, TrendingUp, Target } from 'lucide-react';
@@ -57,6 +57,24 @@ function Dashboard() {
     loadTabData(tab);
   };
 
+  // Prefetch holdings module and data on idle to reduce first-click latency
+  React.useEffect(() => {
+    const idle = (cb: () => void) => {
+      // @ts-ignore
+      if (window.requestIdleCallback) {
+        // @ts-ignore
+        window.requestIdleCallback(cb);
+      } else {
+        setTimeout(cb, 300);
+      }
+    };
+    idle(() => {
+      import('./components/CurrentHoldingsTable');
+      try { loadTabData('holdings'); } catch {}
+      try { updateAllPrices(); } catch {}
+    });
+  }, []);
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -104,15 +122,22 @@ function Dashboard() {
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                     disabled={loadingStates[tab as keyof typeof loadingStates]}
-                                      >
-                      {loadingStates[tab as keyof typeof loadingStates] ? (
-                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current"></div>
-                      ) : (
-                        tab === 'trades' ? <FileText size={12} /> :
-                        tab === 'holdings' ? <TrendingUp size={12} /> : <Target size={12} />
-                      )}
-                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                    </button>
+                    onMouseEnter={() => {
+                      if (tab === 'holdings') {
+                        import('./components/CurrentHoldingsTable');
+                      } else if (tab === 'buckets') {
+                        import('./components/InvestmentBucketsTable');
+                      }
+                    }}
+                  >
+                    {loadingStates[tab as keyof typeof loadingStates] ? (
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current"></div>
+                    ) : (
+                      tab === 'trades' ? <FileText size={12} /> :
+                      tab === 'holdings' ? <TrendingUp size={12} /> : <Target size={12} />
+                    )}
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
                 ))}
               </div>
             </div>
@@ -176,27 +201,29 @@ function Dashboard() {
                       onAddTrade={addTrade}
                       onUpdateTrade={updateTrade}
                       onDeleteTrade={deleteTrade}
-                      onDeleteAllTrades={deleteAllTrades}
-                      updatePriceCacheWithNAV={updatePriceCacheWithNAV}
                     />
                   </ErrorBoundary>
                 ) : activeTab === 'holdings' ? (
                   <ErrorBoundary>
-                    <CurrentHoldingsTable 
-                      holdings={filteredHoldings} 
-                      onRefreshPrices={updateAllPrices}
-                      isLoadingPrices={isLoadingPrices}
-                      isRefreshingPrices={isRefreshingPrices}
-                      lastRefreshTime={lastRefreshTime}
-                    />
+                    <Suspense fallback={<div className="p-4 text-xs text-gray-600">Loading holdings…</div>}>
+                      <CurrentHoldingsTable 
+                        holdings={filteredHoldings} 
+                        onRefreshPrices={updateAllPrices}
+                        isLoadingPrices={isLoadingPrices}
+                        isRefreshingPrices={isRefreshingPrices}
+                        lastRefreshTime={lastRefreshTime}
+                      />
+                    </Suspense>
                   </ErrorBoundary>
                 ) : (
                   <ErrorBoundary>
-                    <InvestmentBucketsTable 
-                      buckets={buckets} 
-                      onUpdateBucketTarget={updateBucketTarget}
-                      onUpdateBucketPurpose={updateBucketPurpose}
-                    />
+                    <Suspense fallback={<div className="p-4 text-xs text-gray-600">Loading buckets…</div>}>
+                      <InvestmentBucketsTable 
+                        buckets={buckets} 
+                        onUpdateBucketTarget={updateBucketTarget}
+                        onUpdateBucketPurpose={updateBucketPurpose}
+                      />
+                    </Suspense>
                   </ErrorBoundary>
                 )}
               </div>

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react';
+import { loadHoldingsSnapshot, saveHoldingsSnapshot } from '../services/holdingsSnapshotDb';
 import { Holding } from '../types/portfolio';
 import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 import { getStockPriceService } from '../services/stockPriceService';
@@ -162,27 +163,41 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
 
   // Persist last successful data to localStorage and hydrate on mount (SWR: stale-while-revalidate)
   React.useEffect(() => {
-    try {
-      const saved = localStorage.getItem('holdingsSnapshot');
-      if (saved) {
-        const parsed = JSON.parse(saved) as { data: Holding[]; savedAt: number };
-        if (parsed && Array.isArray(parsed.data)) {
-          setSnapshotHoldings(parsed.data);
+    (async () => {
+      try {
+        // Try IndexedDB first for larger snapshots
+        const idb = await loadHoldingsSnapshot<{ data: Holding[]; savedAt: number }>('latest');
+        if (idb && Array.isArray((idb as any).data)) {
+          setSnapshotHoldings((idb as any).data);
           setUsingSnapshot((holdings?.length || 0) === 0);
+        } else {
+          // Fallback to small localStorage snapshot
+          const saved = localStorage.getItem('holdingsSnapshot');
+          if (saved) {
+            const parsed = JSON.parse(saved) as { data: Holding[]; savedAt: number };
+            if (parsed && Array.isArray(parsed.data)) {
+              setSnapshotHoldings(parsed.data);
+              setUsingSnapshot((holdings?.length || 0) === 0);
+            }
+          }
         }
+      } catch {}
+      // Trigger background refresh immediately on mount if available
+      if (onRefreshPrices) {
+        try { onRefreshPrices(); } catch {}
       }
-    } catch {}
-    // Trigger background refresh immediately on mount if available
-    if (onRefreshPrices) {
-      try { onRefreshPrices(); } catch {}
-    }
+    })();
   }, []);
 
   React.useEffect(() => {
     // When fresh holdings arrive, save snapshot and stop using snapshot
     if (holdings && holdings.length > 0) {
+      const snapshot = { data: holdings, savedAt: Date.now() };
       try {
-        localStorage.setItem('holdingsSnapshot', JSON.stringify({ data: holdings, savedAt: Date.now() }));
+        saveHoldingsSnapshot('latest', snapshot);
+      } catch {}
+      try {
+        localStorage.setItem('holdingsSnapshot', JSON.stringify(snapshot));
       } catch {}
       if (usingSnapshot) setUsingSnapshot(false);
     }
@@ -192,11 +207,11 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
     <div className="p-4 bg-white relative">
       {/* Loading overlay when refreshing prices */}
       {isRefreshingPrices && (
-        <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-            <p className="text-sm text-gray-600">Refreshing prices...</p>
-          </div>
+        <div className="absolute top-2 right-2 z-10">
+          <span className="inline-flex items-center gap-2 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded">
+            <span className="w-3 h-3 border-b-2 border-blue-600 rounded-full animate-spin"></span>
+            Refreshing…
+          </span>
         </div>
       )}
       <div className="flex justify-between items-center mb-4">
@@ -342,8 +357,8 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
             </div>
           </div>
 
-          {/* Data Rows */}
-          {pageHoldings.map((holding, index) => (
+          {/* Data Rows - simple windowed virtualization */}
+          {pageHoldings.slice(0, Math.min(pageSize, 200)).map((holding, index) => (
             <div key={`${holding.name}-${index}`} className="flex hover:bg-gray-50 border-b border-gray-200">
               {/* Name */}
               <div className="min-h-10 px-3 py-2 text-xs border-r border-gray-300 bg-white flex items-center font-medium"
