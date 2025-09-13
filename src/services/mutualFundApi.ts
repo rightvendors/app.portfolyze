@@ -16,6 +16,27 @@ class MutualFundApiService {
     // No API key needed for public sheets
   }
 
+  // Resolve Apps Script API base from env (strip any leading '@' if present)
+  private getApiBase(): string | undefined {
+    // Vite injects envs on import.meta.env
+    return (import.meta as any)?.env?.VITE_NAV_API_BASE as string | undefined;
+  }
+
+  // Try fetch JSON from Apps Script endpoint
+  private async fetchFromApi<T = any>(path: string): Promise<T | null> {
+    const base = this.getApiBase();
+    if (!base) return null;
+    const url = base.endsWith('/') ? `${base.slice(0, -1)}${path}` : `${base}${path}`;
+    try {
+      const res = await fetch(url, { headers: { 'cache-control': 'no-cache' } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data as T;
+    } catch {
+      return null;
+    }
+  }
+
   // Parse CSV data from Google Sheets
   private parseCSV(csvText: string): MutualFundNAV[] {
     const lines = csvText.trim().split('\n').filter(line => line.trim()); // Remove empty lines
@@ -87,30 +108,38 @@ class MutualFundApiService {
     return result;
   }
 
-  // Get all mutual fund NAVs from Google Sheets
+  // Get all mutual fund NAVs from API (preferred) or Google Sheets (fallback)
   async getAllNAVs(): Promise<MutualFundNAV[]> {
     try {
-      const response = await fetch(this.SHEET_URL);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      // Prefer Apps Script API if configured: expect JSON array of {scheme_name, nav, date, isin}
+      const apiAll = await this.fetchFromApi<MutualFundNAV[] | { data?: MutualFundNAV[] }>(`?all=1`);
+      if (apiAll) {
+        const list = Array.isArray(apiAll) ? apiAll : (apiAll as any).data;
+        if (Array.isArray(list) && list.length > 0) {
+          const cleaned = list
+            .filter(item => item && item.scheme_name && typeof item.nav === 'number')
+            .map(item => ({
+              scheme_name: item.scheme_name,
+              nav: item.nav,
+              date: item.date || new Date().toISOString().split('T')[0],
+              isin: (item as any).isin || ''
+            } as MutualFundNAV));
+          cleaned.forEach(nav => {
+            this.navCache.set(nav.scheme_name.toLowerCase(), { nav, timestamp: Date.now() });
+          });
+          return cleaned;
+        }
       }
 
+      // Fallback to Google Sheets CSV
+      const response = await fetch(this.SHEET_URL);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const csvText = await response.text();
       const navs = this.parseCSV(csvText);
-      
-        if (navs.length === 0) {
-          throw new Error('No data found in spreadsheet');
-        }
-
-      // Cache all NAVs
+      if (navs.length === 0) throw new Error('No data found in spreadsheet');
       navs.forEach(nav => {
-        this.navCache.set(nav.scheme_name.toLowerCase(), {
-          nav: nav,
-          timestamp: Date.now()
-        });
+        this.navCache.set(nav.scheme_name.toLowerCase(), { nav, timestamp: Date.now() });
       });
-
       return navs;
     } catch (error) {
       console.error('Error fetching NAVs from Google Sheets:', error);
@@ -157,25 +186,32 @@ class MutualFundApiService {
   // Search for mutual fund by ISIN
   async searchByISIN(isin: string): Promise<MutualFundNAV | null> {
     const searchKey = isin.toUpperCase().trim();
-    
-    // Check cache first
+    // Try Apps Script API first
+    const api = await this.fetchFromApi<MutualFundNAV | { nav?: number; scheme_name?: string; date?: string; isin?: string }>(`?isin=${encodeURIComponent(searchKey)}`);
+    if (api && (api as any).nav) {
+      const item = api as any;
+      const result: MutualFundNAV = {
+        scheme_name: item.scheme_name || '',
+        nav: Number(item.nav),
+        date: item.date || new Date().toISOString().split('T')[0],
+        isin: item.isin || searchKey
+      };
+      this.navCache.set(result.scheme_name.toLowerCase(), { nav: result, timestamp: Date.now() });
+      return result;
+    }
+    // Fallback: search within CSV-loaded NAVs
     const allNAVs = await this.getAllNAVs();
-    
-    const found = allNAVs.find(nav => 
-      nav.isin && nav.isin.toUpperCase() === searchKey
-    );
-
-    console.log(`ISIN search for "${searchKey}":`, {
-      totalNAVs: allNAVs.length,
-      found: found ? found.scheme_name : null,
-      availableISINs: allNAVs.map(nav => nav.isin).slice(0, 5) // Show first 5 ISINs for debugging
-    });
-
+    const found = allNAVs.find(nav => nav.isin && nav.isin.toUpperCase() === searchKey);
     return found || null;
   }
 
   // Get NAV for a specific scheme
   async getNAV(schemeName: string): Promise<number | null> {
+    // Try API by name first
+    const api = await this.fetchFromApi<MutualFundNAV | { nav?: number; scheme_name?: string; date?: string; isin?: string }>(`?name=${encodeURIComponent(schemeName)}`);
+    if (api && (api as any).nav) {
+      return Number((api as any).nav);
+    }
     const navData = await this.searchNAV(schemeName);
     return navData ? navData.nav : null;
   }
