@@ -189,7 +189,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   }, []);
 
   // Enhanced price fetching with retry logic and better error handling
-  const fetchRealTimePrice = useCallback(async (symbol: string, type: string, isin?: string): Promise<number> => {
+  const fetchRealTimePrice = useCallback(async (symbol: string, type: string, isin?: string, force: boolean = false): Promise<number> => {
     // Canonical cache keys
     const getCanonicalKey = (resolvedSymbol: string | undefined, resolvedIsin?: string) => {
       if (type === 'mutual_fund' && resolvedIsin) return `mf:${resolvedIsin.toUpperCase()}`;
@@ -203,7 +203,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     const cacheEntry = priceCache[cacheKey];
     
     // Check cache first
-    if (cacheEntry && (now - cacheEntry.timestamp) < CACHE_DURATION) {
+    if (!force && cacheEntry && (now - cacheEntry.timestamp) < CACHE_DURATION) {
       return cacheEntry.price;
     }
     
@@ -1258,7 +1258,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
             const isin = lastDash > -1 ? key.slice(lastDash + 1) : data.isin;
             // For stocks, prefer symbol if we have it; otherwise, fall back to name
             const symbolOrName = data.type === 'stock' ? (data.symbol || name) : name;
-            const price = await fetchRealTimePrice(symbolOrName, data.type, isin);
+            const price = await fetchRealTimePrice(symbolOrName, data.type, isin, true);
             return { name: key, type: data.type, price, isin: data.isin };
           })
         );
