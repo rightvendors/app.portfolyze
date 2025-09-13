@@ -208,7 +208,7 @@ function Dashboard() {
                     <Suspense fallback={<div className="p-4 text-xs text-gray-600">Loading holdings…</div>}>
                       <CurrentHoldingsTable 
                         holdings={filteredHoldings} 
-                        onRefreshPrices={updateAllPrices}
+                        onRefreshPrices={() => updateAllPrices(true)}
                         isLoadingPrices={isLoadingPrices}
                         isRefreshingPrices={isRefreshingPrices}
                         lastRefreshTime={lastRefreshTime}
