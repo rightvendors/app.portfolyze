@@ -40,7 +40,9 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
   lastRefreshTime = 0 
 }) => {
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(50);
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [snapshotHoldings, setSnapshotHoldings] = useState<Holding[]>([]);
+  const [usingSnapshot, setUsingSnapshot] = useState<boolean>(false);
   const [columnWidths, setColumnWidths] = useState({
     name: 180,
     netQuantity: 120,
@@ -132,13 +134,16 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
     </div>
   );
 
-  const totals = useMemo(() => holdings.reduce((acc, holding) => ({
+  // Choose data source for display: live holdings or cached snapshot (for instant first paint)
+  const liveOrSnapshot = (holdings && holdings.length > 0) ? holdings : snapshotHoldings;
+
+  const totals = useMemo(() => liveOrSnapshot.reduce((acc, holding) => ({
     investedAmount: acc.investedAmount + holding.investedAmount,
     currentValue: acc.currentValue + holding.currentValue,
     gainLossAmount: acc.gainLossAmount + holding.gainLossAmount,
     annualYield: acc.annualYield + (holding.annualYield * holding.investedAmount),
     xirr: acc.xirr + (holding.xirr * holding.investedAmount)
-  }), { investedAmount: 0, currentValue: 0, gainLossAmount: 0, annualYield: 0, xirr: 0 }), [holdings]);
+  }), { investedAmount: 0, currentValue: 0, gainLossAmount: 0, annualYield: 0, xirr: 0 }), [liveOrSnapshot]);
 
   const totalGainLossPercent = totals.investedAmount > 0 ? 
     (totals.gainLossAmount / totals.investedAmount) * 100 : 0;
@@ -150,10 +155,38 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
     totals.xirr / totals.investedAmount : 0;
 
   const tableWidth = Object.values(columnWidths).reduce((sum, width) => sum + width, 0);
-  const totalPages = Math.max(1, Math.ceil(holdings.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(liveOrSnapshot.length / pageSize));
   const currentPageSafe = Math.min(currentPage, totalPages);
   const pageStart = (currentPageSafe - 1) * pageSize;
-  const pageHoldings = useMemo(() => holdings.slice(pageStart, pageStart + pageSize), [holdings, pageStart, pageSize]);
+  const pageHoldings = useMemo(() => liveOrSnapshot.slice(pageStart, pageStart + pageSize), [liveOrSnapshot, pageStart, pageSize]);
+
+  // Persist last successful data to localStorage and hydrate on mount (SWR: stale-while-revalidate)
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem('holdingsSnapshot');
+      if (saved) {
+        const parsed = JSON.parse(saved) as { data: Holding[]; savedAt: number };
+        if (parsed && Array.isArray(parsed.data)) {
+          setSnapshotHoldings(parsed.data);
+          setUsingSnapshot((holdings?.length || 0) === 0);
+        }
+      }
+    } catch {}
+    // Trigger background refresh immediately on mount if available
+    if (onRefreshPrices) {
+      try { onRefreshPrices(); } catch {}
+    }
+  }, []);
+
+  React.useEffect(() => {
+    // When fresh holdings arrive, save snapshot and stop using snapshot
+    if (holdings && holdings.length > 0) {
+      try {
+        localStorage.setItem('holdingsSnapshot', JSON.stringify({ data: holdings, savedAt: Date.now() }));
+      } catch {}
+      if (usingSnapshot) setUsingSnapshot(false);
+    }
+  }, [holdings]);
 
   return (
     <div className="p-4 bg-white relative">
@@ -167,10 +200,10 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
         </div>
       )}
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xs font-semibold text-gray-800">Current Holdings</h2>
+        <h2 className="text-xs font-semibold text-gray-800">Current Holdings{usingSnapshot ? ' (cached)' : ''}</h2>
         <div className="flex items-center gap-3">
           <div className="text-xs text-gray-600">
-            {holdings.length} holdings
+            {liveOrSnapshot.length} holdings
           </div>
           
           {onRefreshPrices && (
@@ -388,7 +421,7 @@ const CurrentHoldingsTable: React.FC<CurrentHoldingsTableProps> = ({
             </div>
           ))}
           
-          {holdings.length === 0 && (
+          {liveOrSnapshot.length === 0 && (
             <div className="h-20 flex items-center justify-center text-gray-500 text-sm bg-gray-50">
               <div className="text-center">
                 <p className="text-sm text-gray-600 mb-2">No holdings to display</p>
