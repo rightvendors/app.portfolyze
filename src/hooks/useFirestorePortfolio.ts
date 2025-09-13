@@ -1220,7 +1220,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
   };
 
   // Enhanced price update with batch operations and better performance
-  const updateAllPrices = async () => {
+  const updateAllPrices = async (force?: boolean) => {
     // Check if we're already refreshing
     if (isRefreshingPrices) {
       console.log('Price refresh already in progress, skipping...');
@@ -1230,7 +1230,7 @@ export const useFirestorePortfolio = (options: UseFirestorePortfolioOptions = {}
     // Check if we need to refresh (cache is still fresh)
     const now = Date.now();
     const CACHE_FRESH_DURATION = 10 * 60 * 1000; // 10 minutes
-    if (lastRefreshTime > 0 && (now - lastRefreshTime) < CACHE_FRESH_DURATION) {
+    if (!force && lastRefreshTime > 0 && (now - lastRefreshTime) < CACHE_FRESH_DURATION) {
       console.log('Cache is still fresh, skipping refresh...');
       return;
     }
