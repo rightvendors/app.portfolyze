@@ -60,13 +60,16 @@ class MutualFundApiService {
         const list = Array.isArray(apiAll) ? apiAll : (apiAll as any).data;
         if (Array.isArray(list) && list.length > 0) {
           const cleaned = list
-            .filter(item => item && item.scheme_name && typeof item.nav === 'number')
-            .map(item => ({
-              scheme_name: item.scheme_name,
-              nav: item.nav,
-              date: item.date || new Date().toISOString().split('T')[0],
-              isin: (item as any).isin || ''
-            } as MutualFundNAV));
+            .map((item: any) => {
+              const name = item?.scheme_name || item?.schemeName || item?.name || '';
+              const navRaw = item?.nav ?? item?.NAV ?? item?.currentNav;
+              const nav = Number(navRaw);
+              const isin = item?.isin || item?.ISIN || item?.isinCode || '';
+              const date = item?.date || item?.navDate || new Date().toISOString().split('T')[0];
+              if (!name || !isFinite(nav)) return null;
+              return { scheme_name: name, nav, date, isin } as MutualFundNAV;
+            })
+            .filter(Boolean) as MutualFundNAV[];
           cleaned.forEach(nav => {
             this.navCache.set(nav.scheme_name.toLowerCase(), { nav, timestamp: Date.now() });
           });
@@ -137,19 +140,19 @@ class MutualFundApiService {
   async searchByISIN(isin: string): Promise<MutualFundNAV | null> {
     const searchKey = isin.toUpperCase().trim();
     // Try Apps Script API first
-    const api = await this.tryApiCandidates<MutualFundNAV | { nav?: number; scheme_name?: string; date?: string; isin?: string }>([
+    const api = await this.tryApiCandidates<MutualFundNAV | { nav?: number | string; NAV?: number | string; scheme_name?: string; schemeName?: string; date?: string; isin?: string; ISIN?: string }>([
       `?isin=${encodeURIComponent(searchKey)}`,
       `?schemeCode=${encodeURIComponent(searchKey)}`,
       `?q=${encodeURIComponent(searchKey)}&type=isin`,
       `?sheet=${encodeURIComponent('AMFI APP SCRIPT')}&isin=${encodeURIComponent(searchKey)}`
     ]);
-    if (api && (api as any).nav) {
+    if (api && ((api as any).nav || (api as any).NAV)) {
       const item = api as any;
       const result: MutualFundNAV = {
-        scheme_name: item.scheme_name || '',
-        nav: Number(item.nav),
+        scheme_name: item.scheme_name || item.schemeName || '',
+        nav: Number(item.nav ?? item.NAV),
         date: item.date || new Date().toISOString().split('T')[0],
-        isin: item.isin || searchKey
+        isin: item.isin || item.ISIN || searchKey
       };
       this.navCache.set(result.scheme_name.toLowerCase(), { nav: result, timestamp: Date.now() });
       return result;
@@ -163,14 +166,14 @@ class MutualFundApiService {
   // Get NAV for a specific scheme
   async getNAV(schemeName: string): Promise<number | null> {
     // Try API by name first (several common parameter variants)
-    const api = await this.tryApiCandidates<MutualFundNAV | { nav?: number; scheme_name?: string; date?: string; isin?: string }>([
+    const api = await this.tryApiCandidates<MutualFundNAV | { nav?: number | string; NAV?: number | string; scheme_name?: string; schemeName?: string; date?: string; isin?: string }>([
       `?name=${encodeURIComponent(schemeName)}`,
       `?schemeName=${encodeURIComponent(schemeName)}`,
       `?q=${encodeURIComponent(schemeName)}&type=name`,
       `?sheet=${encodeURIComponent('AMFI APP SCRIPT')}&name=${encodeURIComponent(schemeName)}`
     ]);
-    if (api && (api as any).nav) {
-      return Number((api as any).nav);
+    if (api && ((api as any).nav || (api as any).NAV)) {
+      return Number((api as any).nav ?? (api as any).NAV);
     }
     const navData = await this.searchNAV(schemeName);
     return navData ? navData.nav : null;
