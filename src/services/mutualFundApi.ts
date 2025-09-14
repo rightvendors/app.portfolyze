@@ -20,6 +20,13 @@ class MutualFundApiService {
     // Vite injects envs on import.meta.env
     const baseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string | undefined;
     
+    console.log('🔍 MutualFundApi: Environment check:', {
+      hasImportMeta: !!import.meta,
+      hasEnv: !!(import.meta as any)?.env,
+      baseUrl: baseUrl,
+      allEnvVars: (import.meta as any)?.env ? Object.keys((import.meta as any).env) : 'no env object'
+    });
+    
     if (!baseUrl || baseUrl.trim() === '') {
       console.warn('⚠️  VITE_NAV_API_BASE environment variable is not set or empty.');
       console.warn('   To fix this:');
@@ -31,6 +38,7 @@ class MutualFundApiService {
       return undefined;
     }
     
+    console.log('✅ MutualFundApi: Using API base URL:', baseUrl);
     return baseUrl;
   }
 

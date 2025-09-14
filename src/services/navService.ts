@@ -19,6 +19,13 @@ class NAVService {
   private getApiBase(): string | undefined {
     const baseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string | undefined;
     
+    console.log('🔍 NAVService: Environment check:', {
+      hasImportMeta: !!import.meta,
+      hasEnv: !!(import.meta as any)?.env,
+      baseUrl: baseUrl,
+      allEnvVars: (import.meta as any)?.env ? Object.keys((import.meta as any).env) : 'no env object'
+    });
+    
     if (!baseUrl || baseUrl.trim() === '') {
       console.warn('⚠️  VITE_NAV_API_BASE environment variable is not set or empty.');
       console.warn('   To fix this:');
@@ -30,6 +37,7 @@ class NAVService {
       return undefined;
     }
     
+    console.log('✅ NAVService: Using API base URL:', baseUrl);
     return baseUrl;
   }
 

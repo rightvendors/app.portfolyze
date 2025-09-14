@@ -10,6 +10,7 @@ const CurrentHoldingsTable = React.lazy(() => import('./components/CurrentHoldin
 const InvestmentBucketsTable = React.lazy(() => import('./components/InvestmentBucketsTable'));
 import FilterBar from './components/FilterBar';
 import SaveNotification from './components/SaveNotification';
+import EnvTest from './components/EnvTest';
 import { FileText, TrendingUp, Target } from 'lucide-react';
 
 function Dashboard() {
@@ -107,6 +108,9 @@ function Dashboard() {
               <p className="text-sm text-red-700">{error}</p>
             </div>
           )}
+
+          {/* Environment Variables Test - Temporary */}
+          <EnvTest />
 
           {/* Navigation Tabs */}
           <nav className="bg-white border-b border-gray-200">
