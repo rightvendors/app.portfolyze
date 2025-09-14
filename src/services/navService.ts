@@ -37,15 +37,27 @@ class NAVService {
       return undefined;
     }
     
-    console.log('✅ NAVService: Using API base URL:', baseUrl);
-    return baseUrl;
+    // Always use CORS proxy since Google Apps Script doesn't support CORS
+    const corsProxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl);
+    console.log('✅ NAVService: Using CORS proxy URL:', corsProxyUrl);
+    return corsProxyUrl;
   }
 
   private async fetchFromApi<T = any>(url: string): Promise<T | null> {
     try {
-      // Use simple GET request without custom headers to avoid preflight OPTIONS
-      console.log('🌐 NAVService: Fetching from URL:', url);
-      const res = await fetch(url);
+      // Use CORS proxy for all requests
+      const originalBaseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string;
+      const targetUrl = originalBaseUrl.endsWith('/') ? `${originalBaseUrl.slice(0, -1)}${url}` : `${originalBaseUrl}${url}`;
+      const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+      
+      console.log('🌐 NAVService: Fetching from CORS proxy URL:', corsProxyUrl);
+      console.log('🎯 NAVService: Target URL:', targetUrl);
+      
+      const res = await fetch(corsProxyUrl, {
+        headers: {
+          'Accept': 'application/json',
+        }
+      });
       console.log('📡 NAVService: Response status:', res.status, res.statusText);
       
       if (!res.ok) {

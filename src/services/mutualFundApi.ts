@@ -39,15 +39,10 @@ class MutualFundApiService {
       return undefined;
     }
     
-    // In development, use the Vite proxy to avoid CORS issues
-    if (import.meta.env.DEV) {
-      const proxyUrl = '/api/nav';
-      console.log('✅ MutualFundApi: Using proxy URL for development:', proxyUrl);
-      return proxyUrl;
-    }
-    
-    console.log('✅ MutualFundApi: Using direct API base URL:', baseUrl);
-    return baseUrl;
+    // Always use CORS proxy since Google Apps Script doesn't support CORS
+    const corsProxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl);
+    console.log('✅ MutualFundApi: Using CORS proxy URL:', corsProxyUrl);
+    return corsProxyUrl;
   }
 
   // Try fetch JSON from Apps Script endpoint
@@ -57,28 +52,22 @@ class MutualFundApiService {
       console.log('❌ MutualFundApi: No API base URL available');
       return null;
     }
-    const url = base.endsWith('/') ? `${base.slice(0, -1)}${path}` : `${base}${path}`;
-    console.log('🌐 MutualFundApi: Fetching from URL:', url);
+    
+    // For CORS proxy, we need to append the path to the original URL before encoding
+    const originalBaseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string;
+    const targetUrl = originalBaseUrl.endsWith('/') ? `${originalBaseUrl.slice(0, -1)}${path}` : `${originalBaseUrl}${path}`;
+    const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+    
+    console.log('🌐 MutualFundApi: Fetching from CORS proxy URL:', url);
+    console.log('🎯 MutualFundApi: Target URL:', targetUrl);
     
     try {
-      // Use different fetch options based on whether we're using proxy or direct API
-      const isProxy = base.startsWith('/api/');
-      let fetchOptions: RequestInit = {
+      const fetchOptions: RequestInit = {
         method: 'GET',
-      };
-      
-      // For proxy requests, we can add headers safely
-      if (isProxy) {
-        fetchOptions.headers = {
-          'cache-control': 'no-cache',
+        headers: {
           'Accept': 'application/json',
-        };
-      }
-      // For direct API calls, use simple GET (no custom headers to avoid preflight)
-      else {
-        // No custom headers to keep it a "simple" request and avoid preflight OPTIONS
-        console.log('🔧 MutualFundApi: Using simple GET request (no custom headers) to avoid preflight');
-      }
+        }
+      };
       
       console.log('🔧 MutualFundApi: Fetch options:', fetchOptions);
       
@@ -95,39 +84,10 @@ class MutualFundApiService {
       return data as T;
     } catch (error) {
       console.error('❌ MutualFundApi: API request error:', error);
-      
-      // If it's a CORS error and we're not using proxy, try CORS proxy as fallback
-      if (error instanceof TypeError && error.message.includes('CORS') && !base.startsWith('/api/')) {
-        console.log('🔄 MutualFundApi: CORS error detected, trying CORS proxy fallback...');
-        return await this.fetchWithCorsProxy(path);
-      }
-      
       return null;
     }
   }
 
-  // Fallback method using CORS proxy
-  private async fetchWithCorsProxy<T = any>(path: string): Promise<T | null> {
-    const baseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string | undefined;
-    if (!baseUrl) return null;
-    
-    const targetUrl = baseUrl.endsWith('/') ? `${baseUrl.slice(0, -1)}${path}` : `${baseUrl}${path}`;
-    const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-    
-    console.log('🌐 MutualFundApi: Trying CORS proxy:', corsProxyUrl);
-    
-    try {
-      const res = await fetch(corsProxyUrl);
-      if (!res.ok) return null;
-      
-      const data = await res.json();
-      console.log('✅ MutualFundApi: CORS proxy success:', data);
-      return data as T;
-    } catch (error) {
-      console.error('❌ MutualFundApi: CORS proxy failed:', error);
-      return null;
-    }
-  }
 
   private async tryApiCandidates<T = any>(candidates: string[]): Promise<T | null> {
     console.log('🔄 MutualFundApi: Trying API candidates:', candidates);

@@ -14,6 +14,7 @@ import EnvTest from './components/EnvTest';
 import NAVTestButton from './components/NAVTestButton';
 import ProxyTestButton from './components/ProxyTestButton';
 import SimpleRequestTest from './components/SimpleRequestTest';
+import CorsProxyTest from './components/CorsProxyTest';
 import { FileText, TrendingUp, Target } from 'lucide-react';
 
 function Dashboard() {
@@ -123,6 +124,9 @@ function Dashboard() {
           
           {/* Simple Request Test - Temporary */}
           <SimpleRequestTest />
+          
+          {/* CORS Proxy Test - Temporary */}
+          <CorsProxyTest />
 
           {/* Navigation Tabs */}
           <nav className="bg-white border-b border-gray-200">
