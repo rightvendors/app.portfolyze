@@ -45,23 +45,43 @@ class MutualFundApiService {
   // Try fetch JSON from Apps Script endpoint
   private async fetchFromApi<T = any>(path: string): Promise<T | null> {
     const base = this.getApiBase();
-    if (!base) return null;
+    if (!base) {
+      console.log('❌ MutualFundApi: No API base URL available');
+      return null;
+    }
     const url = base.endsWith('/') ? `${base.slice(0, -1)}${path}` : `${base}${path}`;
+    console.log('🌐 MutualFundApi: Fetching from URL:', url);
+    
     try {
       const res = await fetch(url, { mode: 'cors', headers: { 'cache-control': 'no-cache' } });
-      if (!res.ok) return null;
+      console.log('📡 MutualFundApi: Response status:', res.status, res.statusText);
+      
+      if (!res.ok) {
+        console.warn('⚠️ MutualFundApi: API request failed:', res.status, res.statusText);
+        return null;
+      }
+      
       const data = await res.json();
+      console.log('📊 MutualFundApi: API response data:', data);
       return data as T;
-    } catch {
+    } catch (error) {
+      console.error('❌ MutualFundApi: API request error:', error);
       return null;
     }
   }
 
   private async tryApiCandidates<T = any>(candidates: string[]): Promise<T | null> {
+    console.log('🔄 MutualFundApi: Trying API candidates:', candidates);
     for (const path of candidates) {
+      console.log('🔍 MutualFundApi: Trying path:', path);
       const data = await this.fetchFromApi<T>(path);
-      if (data) return data;
+      if (data) {
+        console.log('✅ MutualFundApi: Success with path:', path);
+        return data;
+      }
+      console.log('❌ MutualFundApi: Failed with path:', path);
     }
+    console.log('❌ MutualFundApi: All API candidates failed');
     return null;
   }
 
@@ -69,16 +89,23 @@ class MutualFundApiService {
 
   // Get all mutual fund NAVs from Apps Script JSON API
   async getAllNAVs(): Promise<MutualFundNAV[]> {
+    console.log('🚀 MutualFundApi: getAllNAVs() called');
     try {
       // Prefer Apps Script API if configured: try common variants
+      console.log('🔍 MutualFundApi: Trying API candidates...');
       const apiAll = await this.tryApiCandidates<MutualFundNAV[] | { data?: MutualFundNAV[] }>([
         `?all=1`,
         `?sheet=${encodeURIComponent('AMFI APP SCRIPT')}`,
         `?sheet=AMFI`,
         `?action=all`
       ]);
+      
+      console.log('📊 MutualFundApi: API response:', apiAll);
+      
       if (apiAll) {
         const list = Array.isArray(apiAll) ? apiAll : (apiAll as any).data;
+        console.log('📋 MutualFundApi: Processed list:', { isArray: Array.isArray(list), length: list?.length });
+        
         if (Array.isArray(list) && list.length > 0) {
           const cleaned = list
             .map((item: any) => {
@@ -91,6 +118,8 @@ class MutualFundApiService {
               return { scheme_name: name, nav, date, isin } as MutualFundNAV;
             })
             .filter(Boolean) as MutualFundNAV[];
+          
+          console.log('✅ MutualFundApi: Successfully processed', cleaned.length, 'NAV records');
           cleaned.forEach(nav => {
             this.navCache.set(nav.scheme_name.toLowerCase(), { nav, timestamp: Date.now() });
           });
@@ -99,11 +128,15 @@ class MutualFundApiService {
       }
 
       // No valid API response; give up and use mock
+      console.warn('⚠️ MutualFundApi: Apps Script API returned no data, falling back to mock');
       throw new Error('Apps Script API returned no data');
     } catch (error) {
-      console.error('Error fetching NAVs (API failed):', error);
+      console.error('❌ MutualFundApi: Error fetching NAVs (API failed):', error);
       // As a last resort, attempt name-based API root without params
+      console.log('🔄 MutualFundApi: Trying last resort API call...');
       const lastTry = await this.fetchFromApi<any>('');
+      console.log('🔄 MutualFundApi: Last try result:', lastTry);
+      
       if (Array.isArray(lastTry)) {
         try {
           const cleaned = lastTry
@@ -114,9 +147,16 @@ class MutualFundApiService {
               date: item.date || new Date().toISOString().split('T')[0],
               isin: item.isin || ''
             } as MutualFundNAV));
-          if (cleaned.length > 0) return cleaned;
-        } catch {}
+          if (cleaned.length > 0) {
+            console.log('✅ MutualFundApi: Last try succeeded with', cleaned.length, 'records');
+            return cleaned;
+          }
+        } catch (lastTryError) {
+          console.error('❌ MutualFundApi: Last try failed:', lastTryError);
+        }
       }
+      
+      console.log('🔄 MutualFundApi: Using mock data as final fallback');
       return this.getMockNAVs();
     }
   }
@@ -159,14 +199,20 @@ class MutualFundApiService {
 
   // Search for mutual fund by ISIN
   async searchByISIN(isin: string): Promise<MutualFundNAV | null> {
+    console.log('🔍 MutualFundApi: searchByISIN called for:', isin);
     const searchKey = isin.toUpperCase().trim();
+    
     // Try Apps Script API first
+    console.log('🌐 MutualFundApi: Trying API search for ISIN:', searchKey);
     const api = await this.tryApiCandidates<MutualFundNAV | { nav?: number | string; NAV?: number | string; scheme_name?: string; schemeName?: string; date?: string; isin?: string; ISIN?: string }>([
       `?isin=${encodeURIComponent(searchKey)}`,
       `?schemeCode=${encodeURIComponent(searchKey)}`,
       `?q=${encodeURIComponent(searchKey)}&type=isin`,
       `?sheet=${encodeURIComponent('AMFI APP SCRIPT')}&isin=${encodeURIComponent(searchKey)}`
     ]);
+    
+    console.log('📊 MutualFundApi: API search result:', api);
+    
     if (api && ((api as any).nav || (api as any).NAV)) {
       const item = api as any;
       const result: MutualFundNAV = {
@@ -175,12 +221,16 @@ class MutualFundApiService {
         date: item.date || new Date().toISOString().split('T')[0],
         isin: item.isin || item.ISIN || searchKey
       };
+      console.log('✅ MutualFundApi: Found NAV by ISIN:', result);
       this.navCache.set(result.scheme_name.toLowerCase(), { nav: result, timestamp: Date.now() });
       return result;
     }
+    
     // Fallback: search within CSV-loaded NAVs
+    console.log('🔄 MutualFundApi: API search failed, trying fallback search in all NAVs');
     const allNAVs = await this.getAllNAVs();
     const found = allNAVs.find(nav => nav.isin && nav.isin.toUpperCase() === searchKey);
+    console.log('🔍 MutualFundApi: Fallback search result:', found ? 'Found' : 'Not found');
     return found || null;
   }
 

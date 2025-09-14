@@ -11,6 +11,7 @@ const InvestmentBucketsTable = React.lazy(() => import('./components/InvestmentB
 import FilterBar from './components/FilterBar';
 import SaveNotification from './components/SaveNotification';
 import EnvTest from './components/EnvTest';
+import NAVTestButton from './components/NAVTestButton';
 import { FileText, TrendingUp, Target } from 'lucide-react';
 
 function Dashboard() {
@@ -111,6 +112,9 @@ function Dashboard() {
 
           {/* Environment Variables Test - Temporary */}
           <EnvTest />
+          
+          {/* NAV API Test - Temporary */}
+          <NAVTestButton />
 
           {/* Navigation Tabs */}
           <nav className="bg-white border-b border-gray-200">
