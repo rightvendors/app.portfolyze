@@ -39,16 +39,15 @@ class MutualFundApiService {
       return undefined;
     }
     
-    // Use Netlify Function in production, CORS proxy in development
+    // Use Netlify Function in production, local API in development
     if (import.meta.env.PROD) {
       const netlifyFunctionUrl = '/api/nav';
       console.log('✅ MutualFundApi: Using Netlify Function URL:', netlifyFunctionUrl);
       return netlifyFunctionUrl;
     } else {
-      // In development, use CORS proxy
-      const corsProxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl);
-      console.log('✅ MutualFundApi: Using CORS proxy URL for development:', corsProxyUrl);
-      return corsProxyUrl;
+      // In development, use local API function
+      console.log('✅ MutualFundApi: Using local API function for development');
+      return 'local-api';
     }
   }
 
@@ -58,6 +57,46 @@ class MutualFundApiService {
     if (!base) {
       console.log('❌ MutualFundApi: No API base URL available');
       return null;
+    }
+    
+    if (base === 'local-api') {
+      // Local API function for development
+      try {
+        const { localNavApi } = await import('../utils/localNavApi');
+        
+        // Convert path to query parameters
+        const queryParams: Record<string, string> = {};
+        if (path.includes('?')) {
+          const [, queryPart] = path.split('?');
+          const params = new URLSearchParams(queryPart);
+          params.forEach((value, key) => queryParams[key] = value);
+        } else {
+          // Convert path to query parameters
+          if (path === '?all=1') {
+            queryParams.all = '1';
+          } else if (path.startsWith('?sheet=')) {
+            const sheetName = path.replace('?sheet=', '');
+            queryParams.sheet = decodeURIComponent(sheetName);
+          } else if (path.startsWith('?action=')) {
+            const action = path.replace('?action=', '');
+            queryParams.action = action;
+          } else if (path.startsWith('?isin=')) {
+            const isin = path.replace('?isin=', '');
+            queryParams.isin = decodeURIComponent(isin);
+          } else if (path.startsWith('?name=')) {
+            const name = path.replace('?name=', '');
+            queryParams.name = decodeURIComponent(name);
+          }
+        }
+        
+        console.log('🌐 MutualFundApi: Using local API with params:', queryParams);
+        const data = await localNavApi(queryParams);
+        console.log('📊 MutualFundApi: Local API response data:', data);
+        return data as T;
+      } catch (error) {
+        console.error('❌ MutualFundApi: Local API error:', error);
+        return null;
+      }
     }
     
     let url: string;

@@ -16,6 +16,7 @@ import ProxyTestButton from './components/ProxyTestButton';
 import SimpleRequestTest from './components/SimpleRequestTest';
 import CorsProxyTest from './components/CorsProxyTest';
 import NetlifyFunctionTest from './components/NetlifyFunctionTest';
+import LocalApiTest from './components/LocalApiTest';
 import { FileText, TrendingUp, Target } from 'lucide-react';
 
 function Dashboard() {
@@ -131,6 +132,9 @@ function Dashboard() {
           
           {/* Netlify Function Test - Temporary */}
           <NetlifyFunctionTest />
+          
+          {/* Local API Test - Temporary */}
+          <LocalApiTest />
 
           {/* Navigation Tabs */}
           <nav className="bg-white border-b border-gray-200">
