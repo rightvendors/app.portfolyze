@@ -18,7 +18,20 @@ class MutualFundApiService {
   // Resolve Apps Script API base from env (strip any leading '@' if present)
   private getApiBase(): string | undefined {
     // Vite injects envs on import.meta.env
-    return (import.meta as any)?.env?.VITE_NAV_API_BASE as string | undefined;
+    const baseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string | undefined;
+    
+    if (!baseUrl || baseUrl.trim() === '') {
+      console.warn('⚠️  VITE_NAV_API_BASE environment variable is not set or empty.');
+      console.warn('   To fix this:');
+      console.warn('   1. Create a .env file in your project root');
+      console.warn('   2. Add: VITE_NAV_API_BASE=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec');
+      console.warn('   3. Replace YOUR_SCRIPT_ID with your actual Apps Script deployment ID');
+      console.warn('   4. Restart your development server');
+      console.warn('   For now, using mock data instead of real NAV data.');
+      return undefined;
+    }
+    
+    return baseUrl;
   }
 
   // Try fetch JSON from Apps Script endpoint

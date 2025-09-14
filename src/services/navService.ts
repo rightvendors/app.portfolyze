@@ -17,7 +17,20 @@ class NAVService {
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   private getApiBase(): string | undefined {
-    return (import.meta as any)?.env?.VITE_NAV_API_BASE as string | undefined;
+    const baseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string | undefined;
+    
+    if (!baseUrl || baseUrl.trim() === '') {
+      console.warn('⚠️  VITE_NAV_API_BASE environment variable is not set or empty.');
+      console.warn('   To fix this:');
+      console.warn('   1. Create a .env file in your project root');
+      console.warn('   2. Add: VITE_NAV_API_BASE=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec');
+      console.warn('   3. Replace YOUR_SCRIPT_ID with your actual Apps Script deployment ID');
+      console.warn('   4. Restart your development server');
+      console.warn('   For now, NAV data will not be available.');
+      return undefined;
+    }
+    
+    return baseUrl;
   }
 
   private async fetchFromApi<T = any>(url: string): Promise<T | null> {
