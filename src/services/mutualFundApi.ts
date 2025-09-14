@@ -24,7 +24,8 @@ class MutualFundApiService {
       hasImportMeta: !!import.meta,
       hasEnv: !!(import.meta as any)?.env,
       baseUrl: baseUrl,
-      allEnvVars: (import.meta as any)?.env ? Object.keys((import.meta as any).env) : 'no env object'
+      allEnvVars: (import.meta as any)?.env ? Object.keys((import.meta as any).env) : 'no env object',
+      isDev: import.meta.env.DEV
     });
     
     if (!baseUrl || baseUrl.trim() === '') {
@@ -38,7 +39,14 @@ class MutualFundApiService {
       return undefined;
     }
     
-    console.log('✅ MutualFundApi: Using API base URL:', baseUrl);
+    // In development, use the Vite proxy to avoid CORS issues
+    if (import.meta.env.DEV) {
+      const proxyUrl = '/api/nav';
+      console.log('✅ MutualFundApi: Using proxy URL for development:', proxyUrl);
+      return proxyUrl;
+    }
+    
+    console.log('✅ MutualFundApi: Using direct API base URL:', baseUrl);
     return baseUrl;
   }
 
@@ -53,7 +61,28 @@ class MutualFundApiService {
     console.log('🌐 MutualFundApi: Fetching from URL:', url);
     
     try {
-      const res = await fetch(url, { mode: 'cors', headers: { 'cache-control': 'no-cache' } });
+      // Use different fetch options based on whether we're using proxy or direct API
+      const isProxy = base.startsWith('/api/');
+      let fetchOptions: RequestInit = {
+        method: 'GET',
+      };
+      
+      // For proxy requests, we can add headers safely
+      if (isProxy) {
+        fetchOptions.headers = {
+          'cache-control': 'no-cache',
+          'Accept': 'application/json',
+        };
+      }
+      // For direct API calls, use simple GET (no custom headers to avoid preflight)
+      else {
+        // No custom headers to keep it a "simple" request and avoid preflight OPTIONS
+        console.log('🔧 MutualFundApi: Using simple GET request (no custom headers) to avoid preflight');
+      }
+      
+      console.log('🔧 MutualFundApi: Fetch options:', fetchOptions);
+      
+      const res = await fetch(url, fetchOptions);
       console.log('📡 MutualFundApi: Response status:', res.status, res.statusText);
       
       if (!res.ok) {
@@ -66,6 +95,36 @@ class MutualFundApiService {
       return data as T;
     } catch (error) {
       console.error('❌ MutualFundApi: API request error:', error);
+      
+      // If it's a CORS error and we're not using proxy, try CORS proxy as fallback
+      if (error instanceof TypeError && error.message.includes('CORS') && !base.startsWith('/api/')) {
+        console.log('🔄 MutualFundApi: CORS error detected, trying CORS proxy fallback...');
+        return await this.fetchWithCorsProxy(path);
+      }
+      
+      return null;
+    }
+  }
+
+  // Fallback method using CORS proxy
+  private async fetchWithCorsProxy<T = any>(path: string): Promise<T | null> {
+    const baseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string | undefined;
+    if (!baseUrl) return null;
+    
+    const targetUrl = baseUrl.endsWith('/') ? `${baseUrl.slice(0, -1)}${path}` : `${baseUrl}${path}`;
+    const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+    
+    console.log('🌐 MutualFundApi: Trying CORS proxy:', corsProxyUrl);
+    
+    try {
+      const res = await fetch(corsProxyUrl);
+      if (!res.ok) return null;
+      
+      const data = await res.json();
+      console.log('✅ MutualFundApi: CORS proxy success:', data);
+      return data as T;
+    } catch (error) {
+      console.error('❌ MutualFundApi: CORS proxy failed:', error);
       return null;
     }
   }

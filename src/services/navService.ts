@@ -43,11 +43,21 @@ class NAVService {
 
   private async fetchFromApi<T = any>(url: string): Promise<T | null> {
     try {
-      const res = await fetch(url, { headers: { 'cache-control': 'no-cache' } });
-      if (!res.ok) return null;
+      // Use simple GET request without custom headers to avoid preflight OPTIONS
+      console.log('🌐 NAVService: Fetching from URL:', url);
+      const res = await fetch(url);
+      console.log('📡 NAVService: Response status:', res.status, res.statusText);
+      
+      if (!res.ok) {
+        console.warn('⚠️ NAVService: API request failed:', res.status, res.statusText);
+        return null;
+      }
+      
       const json = await res.json();
+      console.log('📊 NAVService: API response data:', json);
       return json as T;
-    } catch {
+    } catch (error) {
+      console.error('❌ NAVService: API request error:', error);
       return null;
     }
   }

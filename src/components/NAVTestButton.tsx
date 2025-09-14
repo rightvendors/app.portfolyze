@@ -27,7 +27,11 @@ const NAVTestButton: React.FC = () => {
       const navByISIN = await service.searchByISIN(testISIN);
       console.log('🧪 searchByISIN result:', navByISIN);
       
-      setResult(`✅ Test completed! Found ${allNAVs.length} NAVs. ISIN search: ${navByISIN ? 'Found' : 'Not found'}`);
+      // Check if we got real data or mock data
+      const isMockData = allNAVs.length > 0 && allNAVs[0].scheme_name.includes('SBI Bluechip');
+      const dataSource = isMockData ? 'Mock Data' : 'Real API Data';
+      
+      setResult(`✅ Test completed! Found ${allNAVs.length} NAVs. ISIN search: ${navByISIN ? 'Found' : 'Not found'}. Data source: ${dataSource}`);
     } catch (error) {
       console.error('🧪 Test error:', error);
       setResult(`❌ Test failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

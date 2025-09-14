@@ -12,6 +12,8 @@ import FilterBar from './components/FilterBar';
 import SaveNotification from './components/SaveNotification';
 import EnvTest from './components/EnvTest';
 import NAVTestButton from './components/NAVTestButton';
+import ProxyTestButton from './components/ProxyTestButton';
+import SimpleRequestTest from './components/SimpleRequestTest';
 import { FileText, TrendingUp, Target } from 'lucide-react';
 
 function Dashboard() {
@@ -115,6 +117,12 @@ function Dashboard() {
           
           {/* NAV API Test - Temporary */}
           <NAVTestButton />
+          
+          {/* Proxy Test - Temporary */}
+          <ProxyTestButton />
+          
+          {/* Simple Request Test - Temporary */}
+          <SimpleRequestTest />
 
           {/* Navigation Tabs */}
           <nav className="bg-white border-b border-gray-200">
