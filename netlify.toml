@@ -1,0 +1,18 @@
+[build]
+  command = "npm run build"
+  functions = "netlify/functions"
+  publish = "dist"
+
+[build.environment]
+  VITE_NAV_API_BASE = "https://script.google.com/macros/s/AKfycbxWBjnlhuy6vEGBdgcSeFdiGdofUiPJuT5B8w-m_J9NXFDrdci6TuD55cf_RdfTsmPt/exec"
+
+[[redirects]]
+  from = "/api/nav/*"
+  to = "/.netlify/functions/nav-api"
+  status = 200
+
+# For development, we'll use a different approach
+[dev]
+  command = "npm run dev"
+  port = 5173
+  publish = "dist"

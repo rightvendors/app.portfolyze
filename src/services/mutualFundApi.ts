@@ -39,10 +39,17 @@ class MutualFundApiService {
       return undefined;
     }
     
-    // Always use CORS proxy since Google Apps Script doesn't support CORS
-    const corsProxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl);
-    console.log('✅ MutualFundApi: Using CORS proxy URL:', corsProxyUrl);
-    return corsProxyUrl;
+    // Use Netlify Function in production, CORS proxy in development
+    if (import.meta.env.PROD) {
+      const netlifyFunctionUrl = '/api/nav';
+      console.log('✅ MutualFundApi: Using Netlify Function URL:', netlifyFunctionUrl);
+      return netlifyFunctionUrl;
+    } else {
+      // In development, use CORS proxy
+      const corsProxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl);
+      console.log('✅ MutualFundApi: Using CORS proxy URL for development:', corsProxyUrl);
+      return corsProxyUrl;
+    }
   }
 
   // Try fetch JSON from Apps Script endpoint
@@ -53,24 +60,59 @@ class MutualFundApiService {
       return null;
     }
     
-    // For CORS proxy, we need to append the path to the original URL before encoding
-    const originalBaseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string;
-    const targetUrl = originalBaseUrl.endsWith('/') ? `${originalBaseUrl.slice(0, -1)}${path}` : `${originalBaseUrl}${path}`;
-    const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+    let url: string;
+    let fetchOptions: RequestInit;
     
-    console.log('🌐 MutualFundApi: Fetching from CORS proxy URL:', url);
-    console.log('🎯 MutualFundApi: Target URL:', targetUrl);
-    
-    try {
-      const fetchOptions: RequestInit = {
+    if (base.startsWith('/api/')) {
+      // Netlify Function - append path as query parameters
+      const queryParams = new URLSearchParams();
+      if (path.includes('?')) {
+        const [, queryPart] = path.split('?');
+        const params = new URLSearchParams(queryPart);
+        params.forEach((value, key) => queryParams.set(key, value));
+      } else {
+        // Convert path to query parameters
+        if (path === '?all=1') {
+          queryParams.set('all', '1');
+        } else if (path.startsWith('?sheet=')) {
+          const sheetName = path.replace('?sheet=', '');
+          queryParams.set('sheet', decodeURIComponent(sheetName));
+        } else if (path.startsWith('?action=')) {
+          const action = path.replace('?action=', '');
+          queryParams.set('action', action);
+        } else if (path.startsWith('?isin=')) {
+          const isin = path.replace('?isin=', '');
+          queryParams.set('isin', decodeURIComponent(isin));
+        } else if (path.startsWith('?name=')) {
+          const name = path.replace('?name=', '');
+          queryParams.set('name', decodeURIComponent(name));
+        }
+      }
+      
+      url = base + (queryParams.toString() ? `?${queryParams.toString()}` : '');
+      fetchOptions = {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
         }
       };
-      
-      console.log('🔧 MutualFundApi: Fetch options:', fetchOptions);
-      
+    } else {
+      // CORS proxy - append path to original URL before encoding
+      const originalBaseUrl = (import.meta as any)?.env?.VITE_NAV_API_BASE as string;
+      const targetUrl = originalBaseUrl.endsWith('/') ? `${originalBaseUrl.slice(0, -1)}${path}` : `${originalBaseUrl}${path}`;
+      url = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+      fetchOptions = {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        }
+      };
+    }
+    
+    console.log('🌐 MutualFundApi: Fetching from URL:', url);
+    console.log('🔧 MutualFundApi: Fetch options:', fetchOptions);
+    
+    try {
       const res = await fetch(url, fetchOptions);
       console.log('📡 MutualFundApi: Response status:', res.status, res.statusText);
       

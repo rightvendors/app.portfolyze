@@ -15,6 +15,7 @@ import NAVTestButton from './components/NAVTestButton';
 import ProxyTestButton from './components/ProxyTestButton';
 import SimpleRequestTest from './components/SimpleRequestTest';
 import CorsProxyTest from './components/CorsProxyTest';
+import NetlifyFunctionTest from './components/NetlifyFunctionTest';
 import { FileText, TrendingUp, Target } from 'lucide-react';
 
 function Dashboard() {
@@ -127,6 +128,9 @@ function Dashboard() {
           
           {/* CORS Proxy Test - Temporary */}
           <CorsProxyTest />
+          
+          {/* Netlify Function Test - Temporary */}
+          <NetlifyFunctionTest />
 
           {/* Navigation Tabs */}
           <nav className="bg-white border-b border-gray-200">
